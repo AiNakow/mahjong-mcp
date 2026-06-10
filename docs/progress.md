@@ -46,3 +46,43 @@
 - 改良断幺与役牌对子冲突处理：新增 `breakYakuhaiPairForTanyaoBonus`，当切出 `5z/6z/7z` 后手牌明显转向断幺路线时，对断幺路线额外加分。
 - 修正样例 `34678m34p77755s66z` 的何切推荐，当前会推荐切 `6z`，并在解释中说明拆役牌对子后更接近断幺路线、延展性和副露空间更好。
 - 更新 `README.md` 和 `docs/strategy-and-explanation.md`，补充“拆役牌对子转断幺”的当前实现说明。
+
+## 2026-06-11
+
+- 新增 `src/scoring/` 计分基础模块，包含 `types.ts`、`decompose.ts`、`yaku.ts`、`fu.ts`、`points.ts`、`calculate.ts` 和统一导出 `index.ts`。
+- 实现和牌分解基础工具 `decomposeAgari`，支持一般形、七对子和国士无双；一般形会保留多候选分解，并识别两面、嵌张、边张、单骑和双碰等待。
+- 实现第一批役种判断：立直、一发、门清自摸、岭上、抢杠、海底、河底、断幺九、役牌、平和、七对子、一杯口、对对和、混一色、清一色、国士无双，以及基础宝牌计数。
+- 实现基础符计算，覆盖平和荣和/自摸、七对子、门清荣和、役牌雀头、刻子/杠子、单骑/嵌张/边张等待和符数进位。
+- 实现基础点数计算，覆盖普通点、满贯、跳满、倍满、三倍满、数え役满/役满，支持荣和、自摸、本场和立直棒。
+- 新增 `calculateAgariScore` 总入口：对所有分解候选逐一判役、算符、算点，并按最终得点返回最佳候选。
+- 添加 `tests/scoring.test.ts`，覆盖一般形分解、七对子、国士、平和/立直/门清自摸、役牌符数、平和荣和点数和国士役满点数。
+- 更新 `README.md`，补充和牌分解与基础计分能力、调用示例和项目结构。
+- 新增 `docs/scoring.md`，记录和牌分解与计分模块入口、上下文字段、当前支持役种/符/点数和已知限制。
+- 新增计分服务层 `src/service/score-hand.ts` 和 CLI `src/service/score-hand-cli.ts`，添加 `npm run score` 脚本；服务支持结构化传入手牌、和牌牌、荣和/自摸、自风、场风、立直状态、本场、立直棒和宝牌指示牌。
+- 扩展役种判断：新增三色同顺、一气通贯、混全带幺九、纯全带幺九、三暗刻、小三元、混老头、二杯口。
+- 新增基础役满判断：大三元、四暗刻、字一色、清老头、小四喜、大四喜、绿一色；役满候选会优先返回役满役，不叠加普通役。
+- 添加 `tests/score-hand.test.ts`，覆盖计分服务结构化输入、本场、立直棒和宝牌指示牌；扩展 `tests/scoring.test.ts` 覆盖新增常见役和基础役满。
+- 更新 `README.md`，补充 `score` CLI 用法、计分服务调用示例、扩展后的役种支持范围和文档入口。
+- 扩展现代日麻常见规则：新增两立直、三色同刻、三杠子、四杠子、九莲宝灯、纯正九莲宝灯、天和、地和判断。
+- 扩展 `RuleConfig`，新增 `countDoubleYakuman` 开关，默认不计双倍役满；开启后国士十三面、四暗刻单骑、纯正九莲宝灯和大四喜按双倍役满计算。
+- 修正国士无双等待类型识别：最终 14 张中和牌牌形成对子时标记为国士十三面，否则标记为单骑。
+- 扩展 `score` CLI 参数，支持 `--double-riichi`、`--tenhou`、`--chiihou` 和 `--double-yakuman`。
+- 更新 `docs/scoring.md` 和 `README.md`，同步新增役种、上下文字段、双倍役满规则开关和 CLI 参数。
+- 扩展 `calculateAgariScore` 和 `scoreHand` 返回结构，新增 `status` 和 `decompositions`：`not_agari` 表示无法分解成和牌，`no_yaku` 表示和牌但无役，`scored` 表示有有效计分候选。
+- 补充测试覆盖未和牌与无役的状态区分，并更新 `README.md` 和 `docs/scoring.md` 的返回状态说明。
+- 升级副露模型：新增 `CallType`、`CallFrom`，`Call` 支持 `calledTile` 和 `from`；明杠统一使用 `minkan` 类型。
+- `decomposeAgari` 新增副露合法性校验：吃必须为同花连续三张，碰必须三张相同，明杠/暗杠/加杠必须四张相同；非法副露会返回 `not_agari`。
+- `scoreHand` 支持结构化 `calls` 输入，`score` CLI 支持 `--call type:tiles[:calledTile[:from]]`。
+- 补充副露计分测试：副露役牌、食断开关、暗杠不破门清、明杠破门清、副露三色同顺降番、非法副露拒绝分解。
+- 更新 `docs/scoring.md` 和 `README.md`，同步副露输入格式、门清规则、CLI `--call` 参数和副露降番/不成立规则说明。
+- 明杠副露类型统一为 `minkan`，不再保留 `kan` 兼容别名；`score` CLI 不接受 `--call kan:...`。
+- 统一服务层输出策略：`analyzeHandText`、`analyzeNanikiru` 和 `scoreHand` 默认不返回底层 `raw`，CLI 增加 `--verbose` 用于调试输出。
+- `scoreHand` 默认只返回精简计分结果和 `best`，需要全部计分候选、分解或底层结果时使用 `verbose`、`includeCandidates`、`includeDecompositions` 或 `includeRaw`。
+- 更新服务测试，覆盖 `scoreHand` 默认精简输出和 verbose 细节输出；同步更新 `README.md` 和 `docs/scoring.md` 的输出策略说明。
+- 新增计分上下文校验模块 `src/scoring/validation.ts`，支持返回 `warnings`；严重错误会使计分结果进入 `invalid_context` 状态。
+- 当前 `invalid_context` 覆盖：副露立直、立直与两立直同时声明、无立直一发、天和/地和条件错误、海底/河底冲突、岭上/抢杠冲突。
+- 扩展宝牌模型：`AgariContext` 新增 `akaDoraCount` 和 `uraDoraIndicators`；役种输出会拆分 `dora`、`aka_dora`、`ura_dora`，且里宝牌只在立直/两立直时计入。
+- `score` CLI 新增 `--aka` 和 `--ura` 参数；规则禁用赤宝牌或未立直传入里宝牌时会返回 warning 并忽略对应翻数。
+- 新增 `tests/scoring-golden.test.ts`，覆盖代表性荣和、自摸、满贯以上和役满点数。
+- 何切 value evaluator 新增听牌实算打点路线：候选切出后听牌时枚举待牌调用 `calculateAgariScore`，按 `scoringValueDivisor` 折算为打点潜力分。
+- 扩展 `NanikiruPolicy`，新增 `useScoringForTenpaiValue` 和 `scoringValueDivisor`；更新策略设计文档说明实算打点路线。

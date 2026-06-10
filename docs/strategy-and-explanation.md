@@ -181,6 +181,8 @@ type NanikiruPolicy = {
   secondaryValueRouteRatio: number;
   yakuhaiTanyaoConflictDecay: number;
   breakYakuhaiPairForTanyaoBonus: number;
+  useScoringForTenpaiValue: boolean;
+  scoringValueDivisor: number;
 };
 ```
 
@@ -203,6 +205,8 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   secondaryValueRouteRatio: 0.35,
   yakuhaiTanyaoConflictDecay: 0.6,
   breakYakuhaiPairForTanyaoBonus: 50,
+  useScoringForTenpaiValue: true,
+  scoringValueDivisor: 100,
 };
 ```
 
@@ -369,7 +373,10 @@ yakuhai: 役牌路线
 tanyao: 断幺路线
 chiitoi: 七对子路线
 honitsu: 染手路线
+scoring: 听牌实算打点
 ```
+
+当候选切出后已经听牌，且 `useScoringForTenpaiValue` 为 true 时，value evaluator 会枚举该候选的待牌，调用 `calculateAgariScore` 估算最高和牌点数，并按 `scoringValueDivisor` 折算为打点路线分。默认 `scoringValueDivisor` 为 `100`，例如最高和牌点数 5200 点会贡献约 52 分。
 
 ### 役牌与断幺冲突
 
@@ -415,13 +422,11 @@ tanyaoRouteScore += breakYakuhaiPairForTanyaoBonus
 
 ### 暂不实现的打点项
 
-以下项目等和牌、役种和宝牌模块更完整后再实现：
+以下项目等完整局面和规则模块更成熟后再实现：
 
-- 宝牌和赤宝牌。
-- 三色同顺。
-- 一气通贯。
-- 平和完整判断。
-- 一杯口。
+- 根据完整 `GameState` 自动注入场风、自风、立直、宝牌和副露上下文。
+- 对一向听候选做二层进张后的期望打点枚举。
+- 将防守、点棒状况和排名需求纳入打点权重。
 - 混全带幺九/纯全带幺九。
 
 ## 第一版 reasons 示例

@@ -58,6 +58,8 @@ test("evaluateNanikiru policy changes candidate ordering", () => {
     secondaryValueRouteRatio: 0.35,
     yakuhaiTanyaoConflictDecay: 0.6,
     breakYakuhaiPairForTanyaoBonus: 50,
+    useScoringForTenpaiValue: false,
+    scoringValueDivisor: 100,
   });
 
   assert.equal(evaluated.recommendation, "1s");
@@ -85,6 +87,26 @@ test("evaluateNanikiru can prefer breaking yakuhai pair for strong tanyao route"
 
   const explanation = renderNanikiruExplanation(evaluated);
   assert.match(explanation, /拆役牌对子/);
+});
+
+test("evaluateNanikiru uses scoring route for tenpai candidates", () => {
+  const analysis = analyzeHandText("234m234p234s55m667p");
+  assert.equal(analysis.kind, "discard");
+
+  if (analysis.kind !== "discard") {
+    throw new Error("expected discard analysis");
+  }
+
+  const evaluated = evaluateNanikiru(analysis);
+  const candidate = evaluated.candidates.find((item) => item.discard === "6p");
+
+  assert.ok(candidate);
+  assert.equal(candidate.shanten, 0);
+  assert.ok(candidate.scoreBreakdown.value > 90);
+  assert.ok(candidate.reasons.some((reason) => (
+    reason.type === "value"
+    && String(reason.message).includes("最高和牌点数")
+  )));
 });
 
 test("renderNanikiruExplanation renders high-priority reasons", () => {

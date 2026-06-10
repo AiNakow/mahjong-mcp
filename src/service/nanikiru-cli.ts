@@ -8,9 +8,10 @@ declare const process: {
 
 const text = process.argv[2] ?? "3456m3455p123788s";
 const mode = Number(process.argv[3] ?? 0) as ShantenMode;
+const verbose = process.argv.includes("--verbose");
 
 try {
-  const result = analyzeNanikiru({ text, mode });
+  const result = analyzeNanikiru({ text, mode, verbose });
   console.log(JSON.stringify(result));
 } catch (error) {
   if (error instanceof NanikiruParseError) {

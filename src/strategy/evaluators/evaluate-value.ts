@@ -1,8 +1,10 @@
 import type { TileId } from "../../core/tile.ts";
+import { calculateAgariScore } from "../../scoring/index.ts";
 import type { NanikiruPolicy } from "../nanikiru-policy.ts";
 import type { EvaluationPart } from "./evaluation.ts";
+import type { TileInfo } from "../../hand/paili.ts";
 
-export type ValueRoute = "yakuhai" | "tanyao" | "chiitoi" | "honitsu";
+export type ValueRoute = "scoring" | "yakuhai" | "tanyao" | "chiitoi" | "honitsu";
 
 interface ValueRouteScore {
   route: ValueRoute;
@@ -15,8 +17,10 @@ export function evaluateValuePotential(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
+  context: { shanten?: number; waits?: readonly TileInfo[] } = {},
 ): EvaluationPart {
   const routeScores = [
+    evaluateTenpaiScoringRoute(afterDiscard, discard, policy, context),
     evaluateYakuhaiRoute(afterDiscard, discard, policy),
     evaluateTanyaoRoute(afterDiscard, discard, policy),
     evaluateChiitoiRoute(afterDiscard, discard, policy),
@@ -62,6 +66,48 @@ export function evaluateValuePotential(
   });
 
   return { score, reasons };
+}
+
+function evaluateTenpaiScoringRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+  context: { shanten?: number; waits?: readonly TileInfo[] },
+): ValueRouteScore {
+  if (!policy.useScoringForTenpaiValue || context.shanten !== 0 || !context.waits || context.waits.length === 0) {
+    return { route: "scoring", score: 0, reasons: [] };
+  }
+
+  let bestTotal = 0;
+  let bestWait: TileId | undefined;
+  for (const wait of context.waits) {
+    const result = calculateAgariScore({
+      hand: [...afterDiscard, wait.id],
+      winningTile: wait.id,
+      method: "ron",
+    });
+    if (result.best && result.best.points.total > bestTotal) {
+      bestTotal = result.best.points.total;
+      bestWait = wait.id;
+    }
+  }
+
+  if (bestTotal <= 0 || !bestWait) {
+    return { route: "scoring", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(bestTotal / policy.scoringValueDivisor);
+  return {
+    route: "scoring",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: 76,
+      message: `听牌后最高和牌点数约 ${bestTotal} 点，待牌 ${bestWait}。`,
+      data: { discard, bestWait, bestTotal, scoringValueDivisor: policy.scoringValueDivisor },
+    }],
+  };
 }
 
 function evaluateYakuhaiRoute(
@@ -275,6 +321,9 @@ function formatSuit(suit: "m" | "p" | "s"): string {
 }
 
 function formatRoute(route: ValueRoute): string {
+  if (route === "scoring") {
+    return "实算打点";
+  }
   if (route === "yakuhai") {
     return "役牌路线";
   }

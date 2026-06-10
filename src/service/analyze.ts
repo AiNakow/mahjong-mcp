@@ -12,6 +12,8 @@ export interface HandAnalysisInput {
   text: string;
   mode?: ShantenMode;
   includeShantenBack?: boolean;
+  includeRaw?: boolean;
+  verbose?: boolean;
 }
 
 export interface DrawAnalysis {
@@ -27,7 +29,7 @@ export interface DrawAnalysis {
   totalDraws: number;
   goodShapeCount: number;
   goodShapeDraws: TileId[];
-  raw: AnalysisResult;
+  raw?: AnalysisResult;
 }
 
 export interface DiscardCandidate {
@@ -50,7 +52,7 @@ export interface DiscardAnalysis {
   isAgari: boolean;
   candidates: DiscardCandidate[];
   recommendation?: TileId;
-  raw: AnalysisResult;
+  raw?: AnalysisResult;
 }
 
 export type HandAnalysis = DrawAnalysis | DiscardAnalysis;
@@ -71,7 +73,16 @@ export function analyzeHandText(input: string | HandAnalysisInput, mode: Shanten
     throw error;
   }
 
-  const base = {
+  const base: {
+    input: string;
+    handText: string;
+    hand: TileId[];
+    tileCount: number;
+    shanten: number;
+    isTenpai: boolean;
+    isAgari: boolean;
+    raw?: AnalysisResult;
+  } = {
     input: request.text,
     handText,
     hand: raw.hand,
@@ -79,8 +90,10 @@ export function analyzeHandText(input: string | HandAnalysisInput, mode: Shanten
     shanten: raw.shanten,
     isTenpai: raw.is_tenpai,
     isAgari: raw.is_agari,
-    raw,
   };
+  if (request.verbose || request.includeRaw) {
+    base.raw = raw;
+  }
 
   if (raw.kind === "draw") {
     return {

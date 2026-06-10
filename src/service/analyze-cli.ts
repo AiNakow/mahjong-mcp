@@ -9,9 +9,10 @@ declare const process: {
 
 const text = process.argv[2] ?? "123m456p789s1z";
 const mode = Number(process.argv[3] ?? 0) as ShantenMode;
+const verbose = process.argv.includes("--verbose");
 
 try {
-  const result = analyzeHandText({ text, mode });
+  const result = analyzeHandText({ text, mode, verbose });
   console.log(JSON.stringify(result));
 } catch (error) {
   if (error instanceof HandTextParseError) {

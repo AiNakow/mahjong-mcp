@@ -27,16 +27,23 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - value evaluator 使用路线评分模型，按主路线全额计分、最佳次路线折扣计分，并支持断幺与役牌路线冲突衰减。
 - value evaluator 支持“拆役牌对子转断幺”的启发式，在中张延展明显更好的牌形中避免机械保留役牌对子。
 - 基础何切解释层，将高优先级 reasons 渲染为中文解释。
+- 和牌分解基础工具，支持一般形、七对子和国士无双，并保留多候选分解。
+- 基础役种/符/点数计算入口，支持立直、两立直、门清自摸、断幺、役牌、平和、七对子、一杯口、二杯口、三色同顺、三色同刻、一气通贯、混全带幺九、纯全带幺九、三暗刻、三杠子、小三元、混老头、对对和、混一色、清一色、国士无双、四暗刻、大三元、小四喜、大四喜、字一色、清老头、绿一色、四杠子、九莲宝灯、天和、地和和宝牌计数。
+- 双倍役满支持规则开关，默认不计双倍役满。
+- 计分上下文会返回 `warnings`，并用 `invalid_context` 标记无法计分的矛盾输入。
+- 支持普通宝牌、赤宝牌数量和里宝牌指示牌计翻；宝牌不作为起和役。
+- 计分服务层和 CLI，支持结构化传入和牌牌、荣和/自摸、自风、场风、立直、本场、立直棒和宝牌指示牌。
+- 计分服务支持结构化副露输入；暗杠不破门清，吃/碰/明杠/加杠会按开门处理，食断由 `kuitan` 控制。
+- 计分结果会用 `status` 区分未和牌、和牌但无役、正常计分；默认输出精简结果，使用 `verbose`/`--verbose` 时返回全部候选、分解和底层 raw。
 - 简单的牌理 CLI。
 - 使用 Node 内置测试框架覆盖当前行为。
 
 ## 尚未实现
 
 - 基于完整 `GameState` 的动作选择。
-- 和牌分解。
-- 役种判断。
-- 符和点数计算。
-- 宝牌相关的打点评估。
+- 完整役种判断。
+- 完整符和点数计算。
+- 宝牌相关的完整打点评估。
 - 完整局面策略评分。
 - 副露、立直、防守和排名判断。
 - 截图识别。
@@ -48,6 +55,8 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 完整路线见 [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)。
 
 何切评分和解释生成方案见 [docs/strategy-and-explanation.md](./docs/strategy-and-explanation.md)。
+
+和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
 
 ## 环境要求
 
@@ -87,6 +96,7 @@ npm run paili -- 3456m3455p123788s 1
 ```bash
 npm run analyze -- "123m456p789s1z"
 npm run analyze -- "手牌: 3456m 3455p 123788s"
+npm run analyze -- "123m456p789s1z" 0 --verbose
 ```
 
 `analyze` 会根据手牌张数自动区分输出：
@@ -99,6 +109,7 @@ npm run analyze -- "手牌: 3456m 3455p 123788s"
 ```bash
 npm run nanikiru -- "3456m3455p123788s"
 npm run nanikiru -- "手牌: 3456m 3455p 123788s"
+npm run nanikiru -- "手牌: 3456m 3455p 123788s" 0 --verbose
 ```
 
 `nanikiru` 只用于 `3n+2` 的“需要切一张牌”场景。若输入 `3n+1` 手牌，应使用 `npm run analyze` 查看进张和听牌状态。
@@ -112,13 +123,58 @@ npm run nanikiru -- "手牌: 3456m 3455p 123788s"
 - `reasons`：结构化推荐理由。
 - `explanation`：由高优先级 reasons 渲染出的中文解释。
 
+运行计分服务层分析：
+
+```bash
+npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z
+npm run score -- "123m456p789s77s" 3m ron --call pon:555z
+npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z --verbose
+```
+
+前三个位置参数分别是手牌、和牌牌、和牌方式。和牌方式支持 `ron` 和 `tsumo`。可选参数包括：
+
+- `--riichi`
+- `--double-riichi`
+- `--ippatsu`
+- `--rinshan`
+- `--chankan`
+- `--haitei`
+- `--houtei`
+- `--tenhou`
+- `--chiihou`
+- `--double-yakuman`
+- `--seat 1z`
+- `--round 1z`
+- `--honba 1`
+- `--riichi-sticks 1`
+- `--dora 123z`
+- `--ura 123m`
+- `--aka 1`
+- `--call pon:555z`
+- `--call chi:789p:8p:left`
+- `--call ankan:1111m`
+- `--call minkan:9999p:9p:right`
+- `--call kakan:2222s:2s:self`
+- `--verbose`
+
+计分结果中的 `status` 含义：
+
+- `not_agari`：无法分解成和牌形。
+- `invalid_context`：上下文存在不能计分的矛盾输入。
+- `no_yaku`：可以分解成和牌形，但没有起和役。
+- `scored`：存在有效计分候选，`best` 为最高点候选。
+
+服务层默认不返回底层 `raw`。`scoreHand` 默认只返回 `best`，需要全部候选或分解时传入 `verbose`、`includeCandidates`、`includeDecompositions` 或 `includeRaw`。
+
 ## 代码调用示例
 
 ```ts
 import { parseTileGroups } from "./src/core/tile.ts";
 import { analyzeHand, analyzeTiles } from "./src/hand/paili.ts";
+import { calculateAgariScore } from "./src/scoring/index.ts";
 import { analyzeHandText } from "./src/service/analyze.ts";
 import { analyzeNanikiru } from "./src/service/nanikiru.ts";
+import { scoreHand } from "./src/service/score-hand.ts";
 
 const byString = analyzeHand("3456m3455p123788s", 0);
 
@@ -127,11 +183,29 @@ const byTiles = analyzeTiles(tiles, 0);
 
 const drawAnalysis = analyzeHandText("123m456p789s1z");
 const nanikiru = analyzeNanikiru("手牌: 3456m 3455p 123788s");
+const scoreByService = scoreHand({
+  text: "123m456m789p234s22z",
+  winningTile: "4s",
+  method: "ron",
+  seatWind: "3z",
+  bakaze: "1z",
+  riichi: true,
+});
+const score = calculateAgariScore({
+  hand: parseTileGroups("123m456m789p234s22z"),
+  winningTile: "4s",
+  method: "ron",
+  seatWind: "3z",
+  bakaze: "1z",
+  riichi: true,
+});
 
 console.log(byString.shanten);
 console.log(byTiles.draws);
 console.log(drawAnalysis.kind);
 console.log(nanikiru.recommendation);
+console.log(scoreByService.best);
+console.log(score.best);
 ```
 
 也可以使用更底层的 counts API：
@@ -169,12 +243,22 @@ src/
     reason.ts
   explanation/
     render-nanikiru.ts
+  scoring/
+    calculate.ts
+    decompose.ts
+    fu.ts
+    index.ts
+    points.ts
+    types.ts
+    yaku.ts
   service/
     analyze.ts
     analyze-cli.ts
     nanikiru.ts
     nanikiru-cli.ts
     parse-hand.ts
+    score-hand.ts
+    score-hand-cli.ts
 tests/
   analyze.test.ts
     evaluate-nanikiru.test.ts
@@ -184,6 +268,7 @@ tests/
   paili.test.ts
 docs/
   progress.md
+  scoring.md
   strategy-and-explanation.md
 IMPLEMENTATION_PLAN.md
 paili.py
@@ -227,6 +312,12 @@ npm run analyze -- "123m456p789s1z"
 
 ```bash
 npm run nanikiru -- "手牌: 3456m 3455p 123788s"
+```
+
+运行计分服务 CLI：
+
+```bash
+npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z
 ```
 
 ## 进度记录

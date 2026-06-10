@@ -14,6 +14,8 @@ export interface NanikiruPolicy {
   secondaryValueRouteRatio: number;
   yakuhaiTanyaoConflictDecay: number;
   breakYakuhaiPairForTanyaoBonus: number;
+  useScoringForTenpaiValue: boolean;
+  scoringValueDivisor: number;
 }
 
 export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
@@ -32,4 +34,6 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   secondaryValueRouteRatio: 0.35,
   yakuhaiTanyaoConflictDecay: 0.6,
   breakYakuhaiPairForTanyaoBonus: 50,
+  useScoringForTenpaiValue: true,
+  scoringValueDivisor: 100,
 };

@@ -21,9 +21,14 @@ export interface PlayerState {
   menzen: boolean;
 }
 
+export type CallType = "chi" | "pon" | "minkan" | "ankan" | "kakan";
+export type CallFrom = "left" | "across" | "right" | "self";
+
 export interface Call {
-  type: "chi" | "pon" | "kan" | "ankan" | "kakan";
+  type: CallType;
   tiles: TileId[];
+  calledTile?: TileId;
+  from?: CallFrom;
 }
 
 export interface Discard {

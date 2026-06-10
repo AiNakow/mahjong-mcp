@@ -31,7 +31,7 @@ export interface EvaluatedNanikiruAnalysis {
   isAgari: boolean;
   candidates: EvaluatedNanikiruCandidate[];
   recommendation?: TileId;
-  raw: DiscardAnalysis["raw"];
+  raw?: DiscardAnalysis["raw"];
 }
 
 export function evaluateNanikiru(
@@ -100,7 +100,10 @@ function evaluateCandidate(
   }
 
   const shapeEvaluation = evaluateShape(afterDiscard, candidate);
-  const valueEvaluation = evaluateValuePotential(afterDiscard, candidate.discard, policy);
+  const valueEvaluation = evaluateValuePotential(afterDiscard, candidate.discard, policy, {
+    shanten: candidate.shanten,
+    waits: candidate.waits,
+  });
 
   const scoreBreakdown: NanikiruScoreBreakdown = {
     shanten: shantenScore,

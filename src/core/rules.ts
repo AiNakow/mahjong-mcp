@@ -22,6 +22,14 @@ export interface RuleConfig {
    * 需要按具体规则处理，例如头跳。当前牌理模块尚未使用该配置。
    */
   doubleRon: boolean;
+
+  /**
+   * 是否按双倍役满结算特定牌形。
+   *
+   * 为 true 时，国士十三面、四暗刻单骑、纯正九莲宝灯、大四喜等按双倍役满
+   * 处理。默认 false，按单倍役满处理，避免在基础计分阶段默认放大规则差异。
+   */
+  countDoubleYakuman: boolean;
 }
 
 export const DEFAULT_RULE_CONFIG: RuleConfig = {
@@ -31,4 +39,6 @@ export const DEFAULT_RULE_CONFIG: RuleConfig = {
   kuitan: true,
   // 默认允许双响，除非具体规则明确禁用。
   doubleRon: true,
+  // 默认不计双倍役满，具体平台规则需要时再显式开启。
+  countDoubleYakuman: false,
 };

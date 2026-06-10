@@ -21,6 +21,8 @@ export interface NanikiruInput {
   text: string;
   mode?: ShantenMode;
   policy?: Partial<NanikiruPolicy>;
+  includeRaw?: boolean;
+  verbose?: boolean;
 }
 
 export interface NanikiruCandidate {
@@ -46,7 +48,7 @@ export interface NanikiruAnalysis {
   candidates: NanikiruCandidate[];
   recommendation?: TileId;
   explanation: string;
-  raw: DiscardAnalysis["raw"];
+  raw?: DiscardAnalysis["raw"];
 }
 
 export function parseNanikiruHandText(input: string): string {
@@ -54,11 +56,14 @@ export function parseNanikiruHandText(input: string): string {
 }
 
 export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode = 0): NanikiruAnalysis {
-  const analysis = analyzeHandText(input, mode);
+  const request = typeof input === "string" ? { text: input, mode } : input;
+  const analysis = analyzeHandText({
+    ...request,
+    includeRaw: request.includeRaw || request.verbose,
+  }, mode);
   if (analysis.kind !== "discard") {
     throw new HandTextParseError(`${analysis.input}（当前为 ${analysis.tileCount} 张，不是需要切牌的 3n+2 手牌）`);
   }
-  const request = typeof input === "string" ? { text: input, mode } : input;
   const policy = {
     ...DEFAULT_NANIKIRU_POLICY,
     ...request.policy,
@@ -66,7 +71,7 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
   const evaluated = evaluateNanikiru(analysis, policy);
   const explanation = renderNanikiruExplanation(evaluated);
 
-  return {
+  const result: NanikiruAnalysis = {
     input: evaluated.input,
     handText: evaluated.handText,
     hand: evaluated.hand,
@@ -77,8 +82,11 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
     candidates: evaluated.candidates.map(toServiceCandidate),
     recommendation: evaluated.recommendation,
     explanation,
-    raw: evaluated.raw,
   };
+  if (request.verbose || request.includeRaw) {
+    result.raw = evaluated.raw;
+  }
+  return result;
 }
 
 export { HandTextParseError as NanikiruParseError };
