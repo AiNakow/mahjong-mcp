@@ -4,8 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "analyze": "node src/service/analyze-cli.ts",
     "check": "tsc --noEmit",
     "test": "node --test tests/**/*.test.ts",
+    "nanikiru": "node src/service/nanikiru-cli.ts",
     "paili": "node src/hand/paili-cli.ts"
   },
   "devDependencies": {

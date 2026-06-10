@@ -1,16 +1,48 @@
-# Progress Log
+# 进度记录
 
 ## 2026-06-10
 
-- Completed initial inspection. The repository currently contains `IMPLEMENTATION_PLAN.md` and the reference implementation `paili.py`; there is no existing TypeScript project configuration.
-- Completed the first TypeScript rewrite of `paili.py` in `src/hand/paili.ts`, including tile parsing, validation, block DP shanten calculation, waits, good-shape counting, and discard analysis.
-- Added minimal TypeScript project files: `package.json` and `tsconfig.json`. The project declares a `check` script for `tsc --noEmit`, but dependencies have not been installed yet.
-- Installed the declared TypeScript dependency, generated `package-lock.json`, and verified `npm run check` passes.
-- Added `src/hand/paili-cli.ts` and verified `npm run paili -- 3456m3455p123788s` runs successfully.
-- Compared TypeScript outputs against `paili.py` for representative standard, chiitoi, kokushi, draw, and discard cases; key results matched.
-- Added `.gitignore` entries for local generated directories `node_modules/` and `__pycache__/`.
-- Completed a coverage audit against `IMPLEMENTATION_PLAN.md`: current implementation mainly covers tile parsing plus M2 shanten/waits/discard analysis, with a thin CLI wrapper; scoring, strategy, vision, service, HTTP, MCP, and tool adapters remain unimplemented.
-- Added initial core model modules under `src/core/`: tile encoding/parsing, Counts34 helpers, minimal rules, game state types, and action types.
-- Refactored `src/hand/paili.ts` to reuse core tile/count definitions and added lower-level `analyzeCounts` plus `analyzeTiles` entry points while keeping `analyzeHand` compatible.
-- Added Node built-in test coverage in `tests/paili.test.ts` for core tile/count conversion and representative paili analysis cases, plus an `npm test` script.
-- After `@types/node` was installed by the user, verified `npm run check` and `npm test` both pass. The test suite currently has 7 passing tests.
+- 完成初始勘查。仓库最初包含 `IMPLEMENTATION_PLAN.md` 和参考实现 `paili.py`，当时还没有 TypeScript 工程配置。
+- 完成 `paili.py` 的第一版 TypeScript 重写，文件为 `src/hand/paili.ts`，包含牌解析、校验、分块 DP 向听、进张、好形统计和切牌分析。
+- 添加最小 TypeScript 工程文件：`package.json` 和 `tsconfig.json`。项目声明了 `check` 脚本用于执行 `tsc --noEmit`。
+- 安装声明的 TypeScript 依赖，生成 `package-lock.json`，并验证 `npm run check` 通过。
+- 添加 `src/hand/paili-cli.ts`，并验证 `npm run paili -- 3456m3455p123788s` 可以正常运行。
+- 将 TypeScript 输出与 `paili.py` 在一般形、七对子、国士无双、摸牌型和切牌型代表样例上进行对照，关键结果一致。
+- 添加 `.gitignore`，忽略本地生成目录 `node_modules/` 和 `__pycache__/`。
+- 完成与 `IMPLEMENTATION_PLAN.md` 的覆盖度审计：当前实现主要覆盖牌解析以及 M2 向听/进张/切牌分析；计分、策略、视觉识别、服务层、HTTP、MCP 和工具适配尚未实现。
+- 在 `src/core/` 下添加初始核心模型模块：牌编码/解析、`Counts34` 辅助函数、最小规则配置、局面状态类型和动作类型。
+- 重构 `src/hand/paili.ts`，使其复用 core 中的牌和 counts 定义，并添加底层入口 `analyzeCounts` 和 `analyzeTiles`，同时保持 `analyzeHand` 兼容。
+- 添加基于 Node 内置测试框架的测试文件 `tests/paili.test.ts`，覆盖 core 牌/计数转换和代表性牌理分析样例，并添加 `npm test` 脚本。
+- 用户安装 `@types/node` 后，验证 `npm run check` 和 `npm test` 均通过。当前测试套件包含 7 个通过的测试。
+- 添加 `README.md`，介绍项目目标、当前能力边界、安装步骤、CLI 用法、代码调用示例、项目结构、开发命令和进度记录约定。
+- 添加 README 后重新验证 `npm run check` 和 `npm test`，均通过。
+- 为 `src/core/rules.ts` 中的 `RuleConfig` 字段添加说明注释，解释赤宝牌、食断和双响规则含义。验证 `npm run check` 通过。
+- 将现有文档统一改为中文，包括 `README.md` 和本进度记录；同时将 `src/core/rules.ts` 中的说明性注释改为中文。
+- 添加最小何切服务层 `src/service/nanikiru.ts`，支持从纯手牌字符串或 `手牌: ...` 文本中提取手牌，并输出规范化何切分析结构。
+- 添加何切 CLI `src/service/nanikiru-cli.ts` 和 `npm run nanikiru` 脚本。
+- 添加 `tests/nanikiru.test.ts`，覆盖何切文本解析、候选结构、对象输入和非法输入。
+- 更新 `README.md`，补充何切服务层能力、命令行用法、代码调用示例和项目结构。
+- 验证 `npm run check`、`npm test` 和 `npm run nanikiru -- "3456m3455p123788s"` 均通过；当前测试总数为 12 个。
+- 添加通用手牌分析服务 `src/service/analyze.ts`，支持 `3n+1` 手牌的进张/听牌分析，以及 `3n+2` 手牌的候选切牌分析。
+- 添加公共文本解析模块 `src/service/parse-hand.ts`，供通用分析服务和何切服务复用。
+- 添加通用分析 CLI `src/service/analyze-cli.ts` 和 `npm run analyze` 脚本。
+- 补充 `tests/analyze.test.ts`，覆盖 `3n+1` 进张分析、`3n+2` 切牌分析和非法文本处理；何切服务现在会拒绝 `3n+1` 手牌。
+- 更新 `README.md`，说明 `analyze` 与 `nanikiru` 的职责边界。
+- 添加设计文档 `docs/strategy-and-explanation.md`，记录后续何切评分与解释方案：评分模块产出 `score + reasons`，解释层只负责渲染高优先级理由；该文档描述下一阶段设计，当前代码尚未完整实现。
+- 更新 `README.md`，加入评分与解释方案文档入口。
+- 更新 `docs/strategy-and-explanation.md`，补充策略配置与规则引擎边界：第一阶段采用 TypeScript 评分模块加 `PolicyConfig` 权重/阈值，不引入通用规则引擎；后续可用 JSON 配置文件和有限规则表处理策略风格与高层模式切换。
+- 实现评分/解释基础层：新增 `src/strategy/reason.ts`、`src/strategy/nanikiru-policy.ts`、`src/strategy/evaluate-nanikiru.ts` 和 `src/explanation/render-nanikiru.ts`。
+- `analyzeNanikiru` 已接入评分结果，候选现在包含 `score`、`scoreBreakdown` 和 `reasons`，结果中新增 `explanation`。
+- 添加 `tests/evaluate-nanikiru.test.ts`，覆盖评分分项、策略配置覆盖和解释渲染；扩展何切服务测试以覆盖评分字段和解释。
+- 扩展底层 `paili` 分析，新增 `includeShantenBack` 选项；默认保持只返回最佳向听候选，开启后返回所有可切牌候选并记录每个候选切出后的 `shanten`。
+- `analyzeHandText` 服务层默认启用全切牌候选，评分层现在会评估向听后退候选；`shantenWeight` 配置可以影响这些候选的排序。
+- 补充测试覆盖全候选输出、候选真实向听、向听后退候选和策略权重改变排序。
+- 拆分何切评分 evaluator：新增 `src/strategy/evaluators/evaluation.ts`、`evaluate-shape.ts` 和 `evaluate-value.ts`，将 shape/value 逻辑从 `evaluate-nanikiru.ts` 移出。
+- 增强 shape evaluator，支持基础两面、嵌张、边张、复合形和孤立幺九字牌识别，并产出对应 reasons。
+- 添加 `tests/evaluate-shape.test.ts`，覆盖 shape 特征提取和 shape reasons；当前测试总数为 24 个。
+- 将 value evaluator 改为路线评分模型：支持 `yakuhai`、`tanyao`、`chiitoi`、`honitsu` 四类路线，主路线全额计入，最佳次路线按 `secondaryValueRouteRatio` 折算。
+- 扩展 `NanikiruPolicy`，新增 `secondaryValueRouteRatio` 和 `yakuhaiTanyaoConflictDecay`；役牌路线会根据断幺强度进行衰减，避免役牌对子和断幺路线简单叠加导致虚高。
+- 添加 `tests/evaluate-value.test.ts`，覆盖主路线、次路线折扣和役牌/断幺冲突衰减；当前测试总数为 27 个。
+- 改良断幺与役牌对子冲突处理：新增 `breakYakuhaiPairForTanyaoBonus`，当切出 `5z/6z/7z` 后手牌明显转向断幺路线时，对断幺路线额外加分。
+- 修正样例 `34678m34p77755s66z` 的何切推荐，当前会推荐切 `6z`，并在解释中说明拆役牌对子后更接近断幺路线、延展性和副露空间更好。
+- 更新 `README.md` 和 `docs/strategy-and-explanation.md`，补充“拆役牌对子转断幺”的当前实现说明。

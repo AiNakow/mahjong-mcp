@@ -74,6 +74,15 @@ test("analyzeHand matches reference discard sample", () => {
   ]);
 });
 
+test("analyzeHand can include shanten-back discard candidates", () => {
+  const result = analyzeHand("3456m3455p123788s", 0, { includeShantenBack: true });
+
+  assert.equal(result.discards.length, 12);
+  assert.equal(result.discards[0].discard.id, "7s");
+  assert.equal(result.discards[0].shanten, 1);
+  assert.ok(result.discards.some((discard) => discard.discard.id === "1s" && discard.shanten === 2));
+});
+
 test("analyzeHand handles chiitoi and kokushi representative cases", () => {
   const chiitoi = analyzeHand("11223344556677m", 0);
   const kokushi = analyzeHand("19m19p19s1234567z", 0);

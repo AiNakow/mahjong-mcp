@@ -23,6 +23,7 @@ export interface TileInfo {
 
 export interface DiscardInfo {
   discard: TileInfo;
+  shanten: number;
   total_waits: number;
   good_shape_count: number;
   good_shape_draws: TileId[];
@@ -44,6 +45,10 @@ export interface AnalysisResult {
 }
 
 type BlockState = readonly [melds: number, taatsu: number, pairs: number];
+
+export interface AnalyzeOptions {
+  includeShantenBack?: boolean;
+}
 
 export class MahjongHandError extends Error {
   constructor(hand: string) {
@@ -382,23 +387,32 @@ export function getGoodShapeCount(
   return [goodShapeCount, goodShapeDraws];
 }
 
-export function analyzeHand(handStr: string, mode: ShantenMode = 0): AnalysisResult {
+export function analyzeHand(
+  handStr: string,
+  mode: ShantenMode = 0,
+  options: AnalyzeOptions = {},
+): AnalysisResult {
   if (!isValidHandstr(handStr)) {
     throw new MahjongHandError(handStr);
   }
 
   const handCount = strToCount(handStr);
-  return analyzeCounts(handCount, strToList(handStr), mode);
+  return analyzeCounts(handCount, strToList(handStr), mode, options);
 }
 
-export function analyzeTiles(tiles: readonly TileId[], mode: ShantenMode = 0): AnalysisResult {
-  return analyzeCounts(tilesToCounts34(tiles), tiles, mode);
+export function analyzeTiles(
+  tiles: readonly TileId[],
+  mode: ShantenMode = 0,
+  options: AnalyzeOptions = {},
+): AnalysisResult {
+  return analyzeCounts(tilesToCounts34(tiles), tiles, mode, options);
 }
 
 export function analyzeCounts(
   handCountInput: readonly number[],
   hand: readonly TileId[],
   mode: ShantenMode = 0,
+  options: AnalyzeOptions = {},
 ): AnalysisResult {
   assertCounts34(handCountInput);
 
@@ -449,15 +463,20 @@ export function analyzeCounts(
 
     const discards: DiscardInfo[] = [];
     for (let i = 0; i < discardsShanten.length; i += 1) {
-      if (discardsShanten[i] !== bestShanten || handCount[i] <= 0) {
+      if (handCount[i] <= 0) {
+        continue;
+      }
+      if (!options.includeShantenBack && discardsShanten[i] !== bestShanten) {
         continue;
       }
 
+      const discardShanten = discardsShanten[i];
       const discardInfo: DiscardInfo = {
         discard: {
           id: TILES_34[i],
           remaining: 4 - handCount[i],
         },
+        shanten: discardShanten,
         total_waits: 0,
         good_shape_count: 0,
         good_shape_draws: [],
@@ -465,7 +484,7 @@ export function analyzeCounts(
       };
 
       handCount[i] -= 1;
-      discardInfo.waits = getDraws(handCount, bestShanten, mode, shantenCache);
+      discardInfo.waits = getDraws(handCount, discardShanten, mode, shantenCache);
       handCount[i] += 1;
 
       const selfDrawWait = discardInfo.waits.find((wait) => wait.id === TILES_34[i]);
@@ -479,14 +498,14 @@ export function analyzeCounts(
 
     analysisResult.shanten = bestShanten;
 
-    if (analysisResult.shanten === 1) {
+    if (analysisResult.shanten === 1 || options.includeShantenBack) {
       for (const discard of discards) {
         const discardIndex = TILE_INDEX[discard.discard.id];
         handCount[discardIndex] -= 1;
         const [goodShapeCount, goodShapeDraws] = getGoodShapeCount(
           handCount,
           discard.waits,
-          analysisResult.shanten,
+          discard.shanten,
           mode,
           shantenCache,
         );
@@ -496,7 +515,9 @@ export function analyzeCounts(
       }
     }
 
-    analysisResult.discards = discards.sort((a, b) => b.total_waits - a.total_waits);
+    analysisResult.discards = discards.sort((a, b) => (
+      a.shanten - b.shanten || b.total_waits - a.total_waits
+    ));
     analysisResult.is_tenpai = analysisResult.shanten <= 0;
     analysisResult.is_agari = analyzeDraws(handCount, mode, shantenCache) < 0;
   }
