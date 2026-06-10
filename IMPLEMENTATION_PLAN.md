@@ -37,6 +37,7 @@ src/
   hand/
     normalize.ts
     shanten.ts
+    block-dp.ts
     agari.ts
     waits.ts
     ukeire.ts
@@ -104,7 +105,7 @@ docs/
 1m-9m: 万子
 1p-9p: 饼子
 1s-9s: 索子
-E,S,W,N,P,F,C: 东南西北白发中
+1z-7z: 东南西北白发中
 0m,0p,0s: 赤五
 ```
 
@@ -127,7 +128,7 @@ type Tile = {
 0-8:   1m-9m
 9-17:  1p-9p
 18-26: 1s-9s
-27-33: 东南西北白发中
+27-33: 1z-7z，东南西北白发中
 ```
 
 手牌计算统一用：
@@ -141,7 +142,7 @@ type Counts34 = number[];
 ```ts
 type GameState = {
   round: {
-    bakaze: "E" | "S" | "W" | "N";
+    bakaze: "1z" | "2z" | "3z" | "4z";
     kyoku: number;
     honba: number;
     riichiSticks: number;
@@ -157,7 +158,7 @@ type GameState = {
 };
 
 type PlayerState = {
-  seatWind: "E" | "S" | "W" | "N";
+  seatWind: "1z" | "2z" | "3z" | "4z";
   points: number;
   hand?: Tile[];
   calls: Call[];
@@ -190,30 +191,85 @@ type RecognitionValue<T> = {
 - 七对子
 - 国士无双
 
-最终向听取三者最小值。
+闭门普通分析时最终向听取三者最小值。副露手牌或只需要标准形分析时，使用标准形模式，只计算一般形向听；这一点参考 `paili.py` 的 `mode` 参数设计。
 
-一般形算法：
+一般形必须使用分块 DP 算法实现，参考仓库中的 `paili.py`，不要在每次计算时直接对整手牌枚举雀头并递归拆解。
 
-1. 输入 34 维计数。
-2. 枚举雀头候选。
-3. 对每个花色递归拆解面子、搭子、孤张。
-4. 字牌只允许刻子、对子、孤张。
-5. 汇总面子数、搭子数、对子数，计算向听。
-
-向听公式：
+分块方式：
 
 ```text
-shanten = 8 - 2 * melds - taatsu - pair
-if melds + taatsu > 4:
-  shanten += melds + taatsu - 4
+万子块: counts[0:9]，允许顺子
+饼子块: counts[9:18]，允许顺子
+索子块: counts[18:27]，允许顺子
+字牌块: counts[27:34]，不允许顺子
 ```
+
+每个块先独立分析所有可能状态：
+
+```ts
+type BlockState = {
+  melds: number;   // 面子数
+  taatsu: number;  // 搭子数，包含两面、嵌张、对子搭子
+  pairs: 0 | 1;    // 是否提供雀头候选
+};
+```
+
+块内搜索规则：
+
+1. 从当前块最小非零位置开始。
+2. 尝试移除刻子。
+3. 数牌块尝试移除顺子。
+4. 数牌块尝试移除相邻搭子和嵌张搭子。
+5. 所有块尝试移除对子搭子。
+6. 所有块尝试把对子作为雀头候选。
+7. 最后移除孤张。
+
+块状态需要缓存：
+
+```ts
+analyzeBlock(blockCount, allowSequence) -> Set<BlockState>
+```
+
+缓存键为：
+
+```text
+`${allowSequence}:${blockCount.join("")}`
+```
+
+然后合并四个块的状态：
+
+```text
+states = {(melds: 0, taatsu: 0, pairs: 0)}
+for each blockStates in [m, p, s, z]:
+  next = combine(states, blockStates)
+  states = prune(next)
+```
+
+合并时按目标面子数截断，避免无效状态膨胀：
+
+```text
+targetMelds = floor(tileCount / 3)
+melds = min(a.melds + b.melds, targetMelds)
+taatsu = min(a.taatsu + b.taatsu, targetMelds - melds)
+pairs = min(1, a.pairs + b.pairs)
+```
+
+剪枝规则参考 `paili.py` 的 `prune_states`：同一 `(melds, pairs)` 下只保留 `taatsu` 最大的状态。
+
+标准形向听计算：
+
+```text
+usefulTaatsu = min(taatsu, targetMelds - melds)
+shanten = 2 * targetMelds - 2 * melds - usefulTaatsu - min(pairs, 1)
+```
+
+对 14 张手牌打牌后的 13 张、摸牌前 13 张、以及副露后目标面子数变化的情况，都使用 `targetMelds = floor(tileCount / 3)` 计算。
 
 七对子：
 
 ```text
 pairs = count(tileCount >= 2)
-unique = count(tileCount > 0)
-shanten = 6 - pairs + max(0, 7 - unique)
+shanten = 6 - pairs
 ```
 
 国士：
@@ -229,7 +285,9 @@ shanten = 13 - unique - (hasPair ? 1 : 0)
 
 - 能正确计算常见 0-6 向听。
 - 覆盖一般形、七对子、国士边界用例。
-- 性能足够对每个可打牌重复计算。
+- 一般形向听实现必须与 `paili.py` 的分块 DP 思路一致。
+- 对块状态和整手向听都做缓存，支持对每个可打牌候选重复计算。
+- 何切分析中同一次请求共享 `shantenCache`，避免重复计算相同 `Counts34`。
 
 ### 3.2 听牌、进张和何切
 
@@ -244,14 +302,15 @@ shanten(hand) == 0
 1. 对每种剩余牌 `t`，临时加入手牌。
 2. 若新向听数小于当前向听数，则 `t` 是进张。
 3. 剩余枚数 = 4 - 可见数量 - 手牌中数量。
+4. 同一次分析复用 `shantenCache`，缓存键包含 34 维计数和模式。
 
 何切核心：
 
 ```text
 对每张可打牌：
   手牌移除该牌
-  计算向听
-  计算进张集合和剩余枚数
+  用分块 DP 计算向听
+  用共享缓存计算进张集合和剩余枚数
   计算形状质量
   计算打点潜力
   计算危险度
@@ -640,7 +699,7 @@ function decideFromScreenshot(image: Buffer): ScreenshotDecision {
 输入格式：
 
 ```text
-手牌: 234m 456p 22789s E E, 摸 3s
+手牌: 234m 456p 22789s 1z1z, 摸 3s
 宝牌: 7p
 场况: 东1局 南家 6巡目 无立直
 问题: 打什么？
@@ -676,7 +735,7 @@ type NanikiruInput = {
 
 理由：
 当前是一向听。切 9s 后保留 234m、456p、22s、78s 等有效形，进张为 6s/9s/2s 等，共 X 枚。
-切 E 会损失役牌对子价值；切 7s 会破坏 78s 搭子；切 2s 会削弱雀头候选。
+切 1z 会损失役牌对子价值；切 7s 会破坏 78s 搭子；切 2s 会削弱雀头候选。
 在无明显防守压力的早中巡，应优先保持牌效。
 ```
 
@@ -857,7 +916,7 @@ LLM 负责：
 
 验收：
 
-- 能解析 `123m456p789sESW`。
+- 能解析 `123m456p789s123z`。
 - 能区分赤五和普通五。
 - 能从题面构造最小局面。
 
@@ -865,15 +924,18 @@ LLM 负责：
 
 交付：
 
-- 一般形向听。
+- 基于分块 DP 的一般形向听。
 - 七对子向听。
 - 国士向听。
 - 听牌和进张计算。
+- 块状态缓存和整手向听缓存。
 
 验收：
 
 - 100+ 个固定测试用例。
+- 与 `paili.py` 的核心样例输出保持一致。
 - 何切候选能输出向听和进张。
+- 同一何切请求内复用缓存，避免每个候选重复全量搜索。
 
 ### M3：和牌、役、点数
 
