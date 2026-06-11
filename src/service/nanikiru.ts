@@ -14,7 +14,7 @@ import {
   type NanikiruScoreBreakdown,
 } from "../strategy/evaluate-nanikiru.ts";
 import {
-  DEFAULT_NANIKIRU_POLICY,
+  normalizeStrategyPolicy,
   type NanikiruPolicy,
 } from "../strategy/nanikiru-policy.ts";
 import {
@@ -101,10 +101,7 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
   if (analysis.kind !== "discard") {
     throw new HandTextParseError(`${analysis.input}（当前为 ${analysis.tileCount} 张，不是需要切牌的 3n+2 手牌）`);
   }
-  const policy = {
-    ...DEFAULT_NANIKIRU_POLICY,
-    ...request.policy,
-  };
+  const policy = normalizeStrategyPolicy(request.policy);
   const evaluated = evaluateNanikiru(analysis, policy, context);
   const explanation = renderNanikiruExplanation(evaluated);
 

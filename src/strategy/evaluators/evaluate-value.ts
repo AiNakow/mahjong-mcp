@@ -5,6 +5,8 @@ import type { NanikiruPolicy } from "../nanikiru-policy.ts";
 import { isOpenHand, type NanikiruContext } from "../nanikiru-context.ts";
 import type { EvaluationPart } from "./evaluation.ts";
 import type { TileInfo } from "../../hand/paili.ts";
+import type { CandidateFeature } from "../features.ts";
+import { evaluateRoutePortfolio, type RouteEvaluation } from "../routes.ts";
 
 export type ValueRoute =
   | "scoring"
@@ -16,6 +18,7 @@ export type ValueRoute =
   | "honitsu"
   | "ittsu"
   | "sanshoku"
+  | "chanta_sanshoku"
   | "chanta"
   | "toitoi";
 
@@ -39,21 +42,28 @@ export function evaluateValuePotential(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
-  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext } = {},
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext; feature?: CandidateFeature } = {},
 ): EvaluationPart {
   const nanikiruContext = context.context ?? {};
+  const staticRouteScores = context.feature
+    ? evaluateRoutePortfolio(context.feature, policy, nanikiruContext).routes.map(toValueRouteScore)
+    : [
+      evaluateDoraRoute(afterDiscard, discard, policy, nanikiruContext),
+      evaluateYakuhaiRoute(afterDiscard, discard, policy, nanikiruContext),
+      evaluateTanyaoRoute(afterDiscard, discard, policy, nanikiruContext),
+      evaluateChiitoiRoute(afterDiscard, discard, policy),
+      evaluateHonitsuRoute(afterDiscard, discard, policy),
+      evaluateIttsuRoute(afterDiscard, discard, policy),
+      evaluateSanshokuRoute(afterDiscard, discard, policy),
+      evaluateChantaSanshokuRoute(afterDiscard, discard, policy),
+      evaluateChantaRoute(afterDiscard, discard, policy),
+      evaluateToitoiRoute(afterDiscard, discard, policy),
+    ];
+
   const routeScores = [
     evaluateTenpaiScoringRoute(afterDiscard, discard, policy, context),
     evaluateIishantenTwoLayerScoringRoute(afterDiscard, discard, policy, context),
-    evaluateDoraRoute(afterDiscard, discard, policy, nanikiruContext),
-    evaluateYakuhaiRoute(afterDiscard, discard, policy, nanikiruContext),
-    evaluateTanyaoRoute(afterDiscard, discard, policy, nanikiruContext),
-    evaluateChiitoiRoute(afterDiscard, discard, policy),
-    evaluateHonitsuRoute(afterDiscard, discard, policy),
-    evaluateIttsuRoute(afterDiscard, discard, policy),
-    evaluateSanshokuRoute(afterDiscard, discard, policy),
-    evaluateChantaRoute(afterDiscard, discard, policy),
-    evaluateToitoiRoute(afterDiscard, discard, policy),
+    ...staticRouteScores,
   ].filter((route) => route.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -97,11 +107,20 @@ export function evaluateValuePotential(
   return { score, reasons };
 }
 
+function toValueRouteScore(route: RouteEvaluation): ValueRouteScore {
+  return {
+    route: route.id as ValueRoute,
+    score: route.value,
+    reasons: route.reasons,
+    data: route.data,
+  };
+}
+
 function evaluateIishantenTwoLayerScoringRoute(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
-  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext },
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext; feature?: CandidateFeature },
 ): ValueRouteScore {
   if (
     !policy.useTwoLayerValueForIishanten
@@ -150,7 +169,7 @@ function evaluateIishantenTwoLayerScoringRoute(
 function estimateIishantenTwoLayer(
   afterDiscard: readonly TileId[],
   policy: NanikiruPolicy,
-  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext },
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext; feature?: CandidateFeature },
 ): TwoLayerEstimate {
   const mode = isOpenHand(context.context) ? 1 : 0;
   let weightedTotal = 0;
@@ -580,6 +599,72 @@ function evaluateSanshokuRoute(
   };
 }
 
+function evaluateChantaSanshokuRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+): ValueRouteScore {
+  const composite = getChantaSanshokuComposite(afterDiscard);
+  if (!composite) {
+    return { route: "chanta_sanshoku", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(policy.compositeRouteBonus * composite.strength);
+  return {
+    route: "chanta_sanshoku",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: 69,
+      message: `${composite.sequence} 的三色同顺与全带可以复合，打点路线更厚。`,
+      data: {
+        discard,
+        primaryRoute: "chanta_sanshoku",
+        sequence: composite.sequence,
+        sanshokuStrength: composite.sanshokuStrength,
+        chantaStrength: composite.chantaStrength,
+      },
+    }],
+  };
+}
+
+function getChantaSanshokuComposite(
+  tiles: readonly TileId[],
+): { sequence: string; strength: number; sanshokuStrength: number; chantaStrength: number } | undefined {
+  const chantaBlockCount = countChantaBlocks(tiles);
+  const terminalHonorCount = tiles.filter(isTerminalOrHonor).length;
+  if (chantaBlockCount < 4 || terminalHonorCount < 5) {
+    return undefined;
+  }
+
+  let best: { sequence: string; strength: number; sanshokuStrength: number; chantaStrength: number } | undefined;
+  for (const start of [1, 7]) {
+    const blocks = (["m", "p", "s"] as const).map((suit) => getSequenceBlockStrength(tiles, suit, start));
+    const complete = blocks.filter((block) => block === 2).length;
+    const partial = blocks.filter((block) => block === 1).length;
+    const raw = complete * 2 + partial;
+    if (complete < 1 || complete + partial < 3 || raw < 4) {
+      continue;
+    }
+
+    const sanshokuStrength = Math.min(1, raw / 6);
+    const chantaStrength = Math.min(1, chantaBlockCount / 6);
+    const strength = (sanshokuStrength + chantaStrength) / 2;
+    const candidate = {
+      sequence: `${start}${start + 1}${start + 2}`,
+      strength,
+      sanshokuStrength,
+      chantaStrength,
+    };
+    if (!best || candidate.strength > best.strength) {
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
 function evaluateChantaRoute(
   afterDiscard: readonly TileId[],
   discard: TileId,
@@ -836,6 +921,9 @@ function formatRoute(route: ValueRoute): string {
   }
   if (route === "sanshoku") {
     return "三色同顺路线";
+  }
+  if (route === "chanta_sanshoku") {
+    return "全带三色复合路线";
   }
   if (route === "chanta") {
     return "全带路线";

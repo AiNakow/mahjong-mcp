@@ -507,8 +507,12 @@ export function analyzeCounts(
 
     analysisResult.shanten = bestShanten;
 
-    if (analysisResult.shanten === 1 || options.includeShantenBack) {
+    if (analysisResult.shanten <= 1 || options.includeShantenBack) {
       for (const discard of discards) {
+        if (discard.shanten > 1) {
+          continue;
+        }
+
         const discardIndex = TILE_INDEX[discard.discard.id];
         handCount[discardIndex] -= 1;
         const [goodShapeCount, goodShapeDraws] = getGoodShapeCount(

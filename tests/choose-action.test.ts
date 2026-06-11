@@ -58,11 +58,11 @@ test("chooseAction can step back from early low-value tenpai for dora good-shape
   assert.equal(fivePin.shanten, 1);
   assert.ok(fivePin.reasons.some((reason) => (
     reason.type === "ukeire"
-    && String(reason.message).includes("早巡低价值窄听")
-  )));
-  assert.ok(fivePin.reasons.some((reason) => (
-    reason.type === "good_shape"
-    && String(reason.message).includes("早巡改良价值")
+    && String(reason.message).includes("当前低价值窄听")
+    && String(reason.message).includes("退向后的")
+    && String(reason.message).includes("好形相关进张")
+    && String(reason.message).includes("好形率")
+    && typeof reason.data?.goodShapeRatio === "number"
   )));
 });
 

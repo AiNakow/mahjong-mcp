@@ -80,9 +80,9 @@ test("analyzeNanikiru discounts shanten-back candidates with policy overrides", 
   assert.equal(result.recommendedCandidate?.shanten, 1);
   assert.ok(shantenBack);
   assert.equal(shantenBack.shanten, 2);
-  assert.equal(shantenBack.goodShapeCount, 72);
+  assert.equal(shantenBack.goodShapeCount, 0);
   assert.ok(shantenBack.scoreBreakdown.ukeire < shantenBack.totalWaits);
-  assert.ok(shantenBack.scoreBreakdown.goodShape < shantenBack.goodShapeCount * 100);
+  assert.equal(shantenBack.scoreBreakdown.goodShape, 0);
 });
 
 test("analyzeNanikiru accepts calls and scoring context", () => {

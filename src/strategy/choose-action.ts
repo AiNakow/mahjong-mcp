@@ -5,7 +5,7 @@ import type { TileId } from "../core/tile.ts";
 import { analyzeHandText } from "../service/analyze.ts";
 import { evaluateNanikiru, type EvaluatedNanikiruAnalysis } from "./evaluate-nanikiru.ts";
 import {
-  DEFAULT_NANIKIRU_POLICY,
+  normalizeStrategyPolicy,
   type NanikiruPolicy,
 } from "./nanikiru-policy.ts";
 import type { NanikiruContext } from "./nanikiru-context.ts";
@@ -38,10 +38,7 @@ export interface ChooseActionOptions {
 export function chooseAction(state: GameState, options: ChooseActionOptions = {}): ActionDecision {
   const hand = getSelfHandForDiscard(state);
   const context = gameStateToNanikiruContext(state);
-  const basePolicy = {
-    ...DEFAULT_NANIKIRU_POLICY,
-    ...options.policy,
-  };
+  const basePolicy = normalizeStrategyPolicy(options.policy);
 
   const preliminary = analyzeHandText({
     text: hand.join(""),

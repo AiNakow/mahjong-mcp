@@ -80,7 +80,8 @@ export function evaluateRouteCoherence(
       continue;
     }
     if (route.strength >= 0.55 && drop >= 0.25) {
-      const penalty = Math.round(drop * policy.routeBreakPenalty);
+      const penaltyMultiplier = getRouteBreakPenaltyMultiplier(route.route, discard, afterDiscard);
+      const penalty = Math.round(drop * policy.routeBreakPenalty * penaltyMultiplier);
       score -= penalty;
       reasons.push({
         type: "route",
@@ -93,6 +94,7 @@ export function evaluateRouteCoherence(
           previousStrength: route.strength,
           routeStrength: next,
           routePenalty: penalty,
+          penaltyMultiplier,
         },
       });
     }
@@ -117,6 +119,17 @@ export function evaluateRouteCoherence(
   }
 
   return { score, reasons };
+}
+
+function getRouteBreakPenaltyMultiplier(route: RouteName, discard: TileId, afterDiscard: readonly TileId[]): number {
+  if (
+    route === "ittsu"
+    && isTerminalNumberTile(discard)
+    && getTanyaoStrength(afterDiscard, {}) >= 0.7
+  ) {
+    return 0.4;
+  }
+  return 1;
 }
 
 function getRouteStrengths(tiles: readonly TileId[], context: NanikiruContext): RouteStrength[] {
@@ -316,6 +329,11 @@ function isSimpleTile(tile: TileId): boolean {
   const suit = tile[1];
   const rank = Number(tile[0]);
   return suit !== "z" && rank >= 2 && rank <= 8;
+}
+
+function isTerminalNumberTile(tile: TileId): boolean {
+  const rank = Number(tile[0]);
+  return tile[1] !== "z" && (rank === 1 || rank === 9);
 }
 
 function isYakuhaiTile(tile: TileId, context: NanikiruContext): boolean {
