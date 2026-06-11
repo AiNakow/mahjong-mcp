@@ -30,10 +30,11 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - value evaluator 支持未听牌阶段的宝牌、赤宝牌和宝牌周边静态价值。
 - value evaluator 支持一向听候选的二层打点估算：枚举有效进张后的转听牌候选，再按最终待牌剩余枚数调用计分模块估算平均打点。
 - 速度与打点通过 `ukeire`、`goodShape` 和 `value` 分项共同进入总分，高打点低进张候选可以抵消一部分速度劣势，但不会直接覆盖牌效。
-- 初始 `GameState` 决策入口，支持自摸后切牌推荐，并按 `attack`、`balance`、`defense`、`push` 模式调整策略权重。
+- 初始 `GameState` 决策入口，支持自摸后切牌推荐，并按 `attack`、`balance`、`defense`、`push` 模式调整策略权重；面对立直时，高打点一向听会进入 `push`。
+- 点棒/局况策略层，支持南场领先偏守、终局附近领先强防守、南场落后偏推进、自家亲家推进收益、亲家威胁防守加权、供托/本场带来的小幅推进收益，以及南四微差避四的抢和、保听、弃和和四位追分目标。
 - `decide` CLI 支持轻量参数构造局面，或通过 `--state` 读取完整 `GameState` JSON 文件。
-- 防守 MVP 支持对立直/高副露威胁者评估现物、筋、壁、字牌见张、宝牌和宝牌周边风险。
-- 基础何切解释层，将高优先级 reasons 渲染为中文解释。
+- 防守 MVP 支持对立直/高副露威胁者评估现物、分级筋、无筋中张分级、壁、字牌见张、宝牌、宝牌周边风险、一发风险、亲家风险、防守余力和后续防守不足惩罚。
+- 基础何切解释层，将高优先级正面 reasons 渲染为中文解释，并将负面 reasons 单独展示为“注意”。
 - 和牌分解基础工具，支持一般形、七对子和国士无双，并保留多候选分解。
 - 基础役种/符/点数计算入口，支持立直、两立直、门清自摸、断幺、役牌、平和、七对子、一杯口、二杯口、三色同顺、三色同刻、一气通贯、混全带幺九、纯全带幺九、三暗刻、三杠子、小三元、混老头、对对和、混一色、清一色、国士无双、四暗刻、大三元、小四喜、大四喜、字一色、清老头、绿一色、四杠子、九莲宝灯、天和、地和和宝牌计数。
 - 双倍役满支持规则开关，默认不计双倍役满。
@@ -48,7 +49,7 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 ## 尚未实现
 
 - 完整 `GameState` 合法动作集合，目前只支持自摸后切牌决策。
-- 完整局面策略评分，目前只有防守 MVP，尚未实现完整副露、立直和排名判断。
+- 完整局面策略评分，目前已有防守 MVP、高打点推进、点棒/局况阈值和南四微差避四目标，尚未实现完整副露、立直选择、手出/摸切读取和精确逆转 EV。
 - 截图识别。
 - 自然语言何切题解析。
 - HTTP API。
@@ -62,6 +63,8 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
 
 `GameState` 决策 CLI 见 [docs/decide-cli.md](./docs/decide-cli.md)。
+
+南四微差避四与流局听牌策略实现方案见 [docs/南四避四与流局听牌策略方案.md](./docs/南四避四与流局听牌策略方案.md)。
 
 ## 环境要求
 
@@ -146,9 +149,9 @@ npm run nanikiru -- "234m456p778s22z" --call pon:555z --seat 2z --round 1z --dor
 - `calls` / `context`：本次何切使用的副露和局面上下文。
 - `candidates`：全量候选切牌。默认不返回，使用 `verbose` 或 `--verbose` 时返回。候选自身带有 `shanten` 表示切出后的向听数。
 - `score`：候选总评分。
-- `scoreBreakdown`：向听、进张、好形、形状、打点潜力分项。
-- `reasons`：结构化推荐理由。
-- `explanation`：由高优先级 reasons 渲染出的中文解释。
+- `scoreBreakdown`：向听、进张、好形、形状、打点潜力和防守分项。
+- `reasons`：结构化推荐理由，包含正面、负面和中性理由。
+- `explanation`：由高优先级正面 reasons 渲染出的中文解释；负面 reasons 会单独显示在“注意”。
 
 运行计分服务层分析：
 
@@ -201,6 +204,27 @@ npm run decide -- --state examples/decide-state.example.json
 ```
 
 `decide` 当前只支持自摸后切牌决策。轻量参数和完整 JSON 字段说明见 [docs/decide-cli.md](./docs/decide-cli.md)。
+
+当前防守评分覆盖：
+
+- 现物、字牌见张、幺九牌、壁。
+- 分级筋：`1/9` 筋、`2/8` 筋、`4/5/6` 筋、`3/7` 筋安全度依次降低。
+- 无筋中张分级：`5`、`4/6`、`3/7`、`2/8` 危险度依次降低。
+- 宝牌和宝牌周边风险。
+- 一发巡和亲家威胁风险。
+- 晚巡风险。
+- 切牌后的防守余力，以及较可靠防守牌不足时的惩罚。
+
+当前点棒/局况策略覆盖：
+
+- 南场领先 12000 点以上提高防守权重。
+- 终局附近且自家第一时进一步提高防守权重，并可把 `balance` 修正为 `defense`。
+- 南场三位/四位且距一位 12000 点以上提高打点权重，并可把 `balance` 修正为 `push`。
+- 自家亲家小幅提高推进收益。
+- 威胁者亲家提高防守权重。
+- 供托或本场增加时，小幅提高推进收益。
+- 南四三位领先四位 4000 点以内时，根据向听和巡目切换 `winOut`、`tenpaiKeep`、`fold` 目标；听牌优先和牌结束，一向听和中巡手牌优先保听/速度，终盘手慢且四位进攻时转为防放铳。
+- 自家四位时切换为 `chase` 目标，提高推进和打点权重以保留脱四路线。
 
 ## 代码调用示例
 
@@ -296,6 +320,8 @@ src/
       evaluation.ts
     choose-action.ts
     evaluate-nanikiru.ts
+    high-value.ts
+    placement.ts
     nanikiru-context.ts
     nanikiru-policy.ts
     reason.ts
@@ -330,6 +356,7 @@ docs/
   progress.md
   scoring.md
   strategy-and-explanation.md
+  南四避四与流局听牌策略方案.md
 examples/
   decide-state.example.json
 IMPLEMENTATION_PLAN.md

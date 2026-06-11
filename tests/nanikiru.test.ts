@@ -65,18 +65,24 @@ test("analyzeNanikiru accepts object input with mode", () => {
   assert.equal(result.recommendation, "2m");
 });
 
-test("analyzeNanikiru accepts policy overrides", () => {
+test("analyzeNanikiru discounts shanten-back candidates with policy overrides", () => {
   const result = analyzeNanikiru({
     text: "3456m3455p123788s",
     policy: {
       ukeireWeight: 1,
       goodShapeWeight: 100,
     },
+    verbose: true,
   });
+  const shantenBack = result.candidates?.find((candidate) => candidate.discard === "1s");
 
-  assert.equal(result.recommendation, "1s");
-  assert.equal(result.recommendedCandidate?.shanten, 2);
-  assert.equal(result.recommendedCandidate?.goodShapeCount, 72);
+  assert.equal(result.recommendation, "5p");
+  assert.equal(result.recommendedCandidate?.shanten, 1);
+  assert.ok(shantenBack);
+  assert.equal(shantenBack.shanten, 2);
+  assert.equal(shantenBack.goodShapeCount, 72);
+  assert.ok(shantenBack.scoreBreakdown.ukeire < shantenBack.totalWaits);
+  assert.ok(shantenBack.scoreBreakdown.goodShape < shantenBack.goodShapeCount * 100);
 });
 
 test("analyzeNanikiru accepts calls and scoring context", () => {

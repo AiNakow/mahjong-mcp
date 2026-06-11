@@ -3,6 +3,7 @@ export interface NanikiruPolicy {
   ukeireWeight: number;
   goodShapeWeight: number;
   shapeWeight: number;
+  routeWeight: number;
   valueWeight: number;
   defenseWeight: number;
 
@@ -30,6 +31,12 @@ export interface NanikiruPolicy {
   breakYakuhaiPairForTanyaoBonus: number;
   useScoringForTenpaiValue: boolean;
   scoringValueDivisor: number;
+  routeCommitmentBonus: number;
+  routeImprovementBonus: number;
+  routeBreakPenalty: number;
+  shantenBackUkeireMultiplier: number;
+  shantenBackGoodShapeMultiplier: number;
+  shantenBackDefenseOverrideDelta: number;
 }
 
 export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
@@ -37,6 +44,7 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   ukeireWeight: 10,
   goodShapeWeight: 8,
   shapeWeight: 1,
+  routeWeight: 1,
   valueWeight: 1,
   defenseWeight: 1,
 
@@ -64,4 +72,10 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   breakYakuhaiPairForTanyaoBonus: 50,
   useScoringForTenpaiValue: true,
   scoringValueDivisor: 100,
+  routeCommitmentBonus: 36,
+  routeImprovementBonus: 55,
+  routeBreakPenalty: 45,
+  shantenBackUkeireMultiplier: 0.35,
+  shantenBackGoodShapeMultiplier: 0.25,
+  shantenBackDefenseOverrideDelta: 300,
 };

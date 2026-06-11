@@ -105,3 +105,14 @@
 - `decide` CLI 支持 `--state` 读取完整 `GameState` JSON 文件；新增 `examples/decide-state.example.json` 作为示例。
 - 新增 `docs/decide-cli.md`，说明轻量参数、完整 JSON 字段、对手方向约定和当前只支持切牌决策的边界。
 - 修正 `buildVisibleTilesFromState`，构造可见牌时会把 `lastDraw` 纳入统计，支持 `--draw` 形式的 13 张闭手 + 自摸牌输入。
+- 按 `docs/推荐和评分策略改进方案.md` 落地推荐和评分策略改进：新增高打点一向听推进模式、动态防守权重、防守余力评分、后续防守不足惩罚、解释层正负理由分区和防守比较型理由。
+- 调整筋牌安全度分级：`1/9` 筋、`2/8` 筋、`4/5/6` 筋、`3/7` 筋安全度依次降低；`3/7` 筋不再计入较可靠防守资源。
+- 同步更新 `README.md`、`docs/strategy-and-explanation.md`、`docs/decide-cli.md` 和 `docs/推荐和评分策略改进方案.md`，记录当前防守评分覆盖范围、解释展示规则和高打点推进边界。
+- 扩展防守 evaluator：新增无筋中张危险度分级、一发巡风险和亲家威胁风险，并补充测试覆盖对应分数梯度和 reasons。
+- 新增点棒/局况策略层 `src/strategy/placement.ts`：计算排名、点差、南场/终局、自家亲家、亲家威胁、供托和本场，输出 `pushBias`、防守/打点权重倍率和 `placement` reasons。
+- `chooseAction` 接入局况调整：基础模式先由威胁和向听决定，再由局况修正 `balance`/`push`/`defense`，并将局况权重倍率应用到何切评分。
+- 补充测试覆盖终局领先转防守、南场落后转推进、自家亲家推进收益和亲家威胁防守加权；同步更新 README、`docs/strategy-and-explanation.md` 和 `docs/decide-cli.md`。
+- 新增待实现设计文档 `docs/南四避四与流局听牌策略方案.md`，记录南四三位微差时“抢和结束 / 保听流局 / 防放铳 / 四位追分”的目标切换方案，重点处理流局听牌罚符可能导致落四的问题。
+- 按 `docs/南四避四与流局听牌策略方案.md` 落地南四微差避四策略：`PlacementAdjustment` 新增 `avoidFourthGoal`、`shantenWeightMul` 和 `ukeireWeightMul`，并将向听数传入局况层。
+- `chooseAction` 已应用新增局况倍率；南四三位微差会在 `winOut`、`tenpaiKeep`、`fold` 间切换，自家四位会进入 `chase` 追分目标，早巡慢手不会因避四直接降级为防守。
+- 扩展 `tests/choose-action.test.ts`，覆盖早巡不弃和、听牌抢和、一向听保听、终盘手慢且四位威胁转防守、自家四位追分；同步更新 README、`docs/strategy-and-explanation.md` 和 `docs/decide-cli.md`。

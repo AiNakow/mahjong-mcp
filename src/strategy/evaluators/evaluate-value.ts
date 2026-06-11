@@ -131,7 +131,7 @@ function evaluateIishantenTwoLayerScoringRoute(
     reasons: [{
       type: "value",
       polarity: "positive",
-      priority: averagePoints >= 7700 ? 78 : 64,
+      priority: getHighPointsPriority(averagePoints, averagePoints >= 7700 ? 78 : 64),
       message: `一向听进张转听牌后的平均打点约 ${averagePoints} 点。`,
       data: {
         discard,
@@ -141,6 +141,7 @@ function evaluateIishantenTwoLayerScoringRoute(
         totalRemaining,
         twoLayerValueDivisor: policy.twoLayerValueDivisor,
         primaryRoute: "two_layer_scoring",
+        highPoints: averagePoints >= 7700,
       },
     }],
   };
@@ -291,11 +292,21 @@ function evaluateTenpaiScoringRoute(
     reasons: [{
       type: "value",
       polarity: "positive",
-      priority: 76,
+      priority: getHighPointsPriority(bestTotal, 76),
       message: `听牌后最高和牌点数约 ${bestTotal} 点，待牌 ${bestWait}。`,
-      data: { discard, bestWait, bestTotal, scoringValueDivisor: policy.scoringValueDivisor },
+      data: { discard, bestWait, bestTotal, scoringValueDivisor: policy.scoringValueDivisor, highPoints: bestTotal >= 7700 },
     }],
   };
+}
+
+function getHighPointsPriority(points: number, fallbackPriority: number): number {
+  if (points >= 12000) {
+    return 92;
+  }
+  if (points >= 7700) {
+    return 86;
+  }
+  return Math.max(fallbackPriority, 64);
 }
 
 function estimateWeightedAgariPoints(

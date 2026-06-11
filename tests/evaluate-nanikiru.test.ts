@@ -36,7 +36,7 @@ test("evaluateNanikiru adds score breakdown and reasons", () => {
   )));
 });
 
-test("evaluateNanikiru policy changes candidate ordering", () => {
+test("evaluateNanikiru keeps shanten-back candidates behind non-back candidates", () => {
   const analysis = analyzeHandText("3456m3455p123788s");
   assert.equal(analysis.kind, "discard");
 
@@ -50,10 +50,15 @@ test("evaluateNanikiru policy changes candidate ordering", () => {
     goodShapeWeight: 100,
     useScoringForTenpaiValue: false,
   });
+  const shantenBack = evaluated.candidates.find((candidate) => candidate.discard === "1s");
 
-  assert.equal(evaluated.recommendation, "1s");
-  assert.equal(evaluated.candidates[0].shanten, 2);
-  assert.equal(evaluated.candidates[0].goodShapeCount, 72);
+  assert.equal(evaluated.recommendation, "5p");
+  assert.equal(evaluated.candidates[0].shanten, 1);
+  assert.ok(shantenBack);
+  assert.equal(shantenBack.shanten, 2);
+  assert.equal(shantenBack.goodShapeCount, 72);
+  assert.equal(shantenBack.scoreBreakdown.ukeire, 72 * 1 * DEFAULT_NANIKIRU_POLICY.shantenBackUkeireMultiplier);
+  assert.equal(shantenBack.scoreBreakdown.goodShape, 72 * 100 * DEFAULT_NANIKIRU_POLICY.shantenBackGoodShapeMultiplier);
 });
 
 test("evaluateNanikiru can prefer breaking yakuhai pair for strong tanyao route", () => {
@@ -76,6 +81,36 @@ test("evaluateNanikiru can prefer breaking yakuhai pair for strong tanyao route"
 
   const explanation = renderNanikiruExplanation(evaluated);
   assert.match(explanation, /拆役牌对子/);
+});
+
+test("evaluateNanikiru keeps clear tanyao route over small raw ukeire edge", () => {
+  const analysis = analyzeHandText({
+    text: "234677m2334p6789s",
+    unavailableTiles: ["2z"],
+  });
+  assert.equal(analysis.kind, "discard");
+
+  if (analysis.kind !== "discard") {
+    throw new Error("expected discard analysis");
+  }
+
+  const evaluated = evaluateNanikiru(analysis, DEFAULT_NANIKIRU_POLICY, {
+    bakaze: "1z",
+    seatWind: "1z",
+    doraIndicators: ["2z"],
+  });
+  const best = evaluated.candidates[0];
+  const threePin = evaluated.candidates.find((candidate) => candidate.discard === "3p");
+
+  assert.equal(evaluated.recommendation, "9s");
+  assert.equal(best.discard, "9s");
+  assert.ok(best.scoreBreakdown.route > 0);
+  assert.ok(threePin);
+  assert.ok(threePin.scoreBreakdown.route < 0);
+  assert.ok(best.reasons.some((reason) => (
+    reason.type === "route"
+    && String(reason.message).includes("断幺路线")
+  )));
 });
 
 test("evaluateNanikiru uses scoring route for tenpai candidates", () => {

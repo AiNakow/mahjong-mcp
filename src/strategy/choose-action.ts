@@ -9,6 +9,13 @@ import {
   type NanikiruPolicy,
 } from "./nanikiru-policy.ts";
 import type { NanikiruContext } from "./nanikiru-context.ts";
+import { isHighValueHand } from "./high-value.ts";
+import { normalizeReasonPriorities } from "../explanation/render-nanikiru.ts";
+import {
+  adjustModeByPlacement,
+  evaluatePlacementAdjustment,
+  type PlacementAdjustment,
+} from "./placement.ts";
 
 export type StrategyMode = "attack" | "balance" | "defense" | "push";
 
@@ -53,15 +60,22 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
     throw new Error(`GameState self hand must contain a 3n+2 discard hand, got ${preliminary.tileCount} tiles`);
   }
 
-  const mode = chooseStrategyMode(state, preliminary.shanten);
-  const policy = applyModePolicy(basePolicy, mode);
+  const highValueHand = isHighValueHand(state);
+  const placement = evaluatePlacementAdjustment(state, {
+    shanten: preliminary.shanten,
+    highValueHand,
+  });
+  const baseMode = chooseStrategyMode(state, preliminary.shanten);
+  const mode = adjustModeByPlacement(baseMode, placement);
+  const policy = applyPlacementPolicy(applyModePolicy(basePolicy, mode, highValueHand), placement);
   const analysis = evaluateNanikiru(preliminary, policy, context);
+  addPlacementReasons(analysis, placement);
 
   return {
     mode,
     action: analysis.recommendation ? { type: "discard", tile: analysis.recommendation } : undefined,
     analysis,
-    explanation: renderDecisionExplanation(mode, analysis),
+    explanation: renderDecisionExplanation(mode, analysis, highValueHand),
   };
 }
 
@@ -76,10 +90,13 @@ export function chooseStrategyMode(state: GameState, shanten: number): StrategyM
   if (shanten === 0) {
     return "push";
   }
+  if (shanten === 1 && isHighValueHand(state)) {
+    return "push";
+  }
   return "balance";
 }
 
-function applyModePolicy(policy: NanikiruPolicy, mode: StrategyMode): NanikiruPolicy {
+function applyModePolicy(policy: NanikiruPolicy, mode: StrategyMode, highValueHand = false): NanikiruPolicy {
   if (mode === "defense") {
     return {
       ...policy,
@@ -92,7 +109,7 @@ function applyModePolicy(policy: NanikiruPolicy, mode: StrategyMode): NanikiruPo
   if (mode === "balance") {
     return {
       ...policy,
-      defenseWeight: Math.max(policy.defenseWeight, 5),
+      defenseWeight: Math.max(policy.defenseWeight, highValueHand ? 2 : 5),
       ukeireWeight: policy.ukeireWeight * 0.8,
     };
   }
@@ -104,6 +121,24 @@ function applyModePolicy(policy: NanikiruPolicy, mode: StrategyMode): NanikiruPo
     };
   }
   return policy;
+}
+
+function applyPlacementPolicy(policy: NanikiruPolicy, placement: PlacementAdjustment): NanikiruPolicy {
+  return {
+    ...policy,
+    shantenWeight: policy.shantenWeight * placement.shantenWeightMul,
+    ukeireWeight: policy.ukeireWeight * placement.ukeireWeightMul,
+    defenseWeight: policy.defenseWeight * placement.defenseWeightMul,
+    valueWeight: policy.valueWeight * placement.valueWeightMul,
+  };
+}
+
+function addPlacementReasons(analysis: EvaluatedNanikiruAnalysis, placement: PlacementAdjustment): void {
+  const best = analysis.candidates[0];
+  if (!best || placement.reasons.length === 0) {
+    return;
+  }
+  best.reasons.push(...placement.reasons);
 }
 
 function gameStateToNanikiruContext(state: GameState): NanikiruContext {
@@ -141,7 +176,7 @@ function hasOpenCall(state: GameState): boolean {
   return state.self.calls.some((call) => call.type !== "ankan");
 }
 
-function renderDecisionExplanation(mode: StrategyMode, analysis: EvaluatedNanikiruAnalysis): string {
+function renderDecisionExplanation(mode: StrategyMode, analysis: EvaluatedNanikiruAnalysis, highValueHand = false): string {
   const best = analysis.candidates[0];
   if (!best) {
     return "当前没有可用动作。";
@@ -151,18 +186,32 @@ function renderDecisionExplanation(mode: StrategyMode, analysis: EvaluatedNaniki
     : mode === "balance"
       ? "当前采用攻守平衡模式。"
       : mode === "push"
-        ? "当前听牌，采用推进模式。"
+        ? (
+          analysis.shanten === 0
+            ? "当前听牌，采用推进模式。"
+            : highValueHand
+              ? "当前一向听且打点较高，采用推进模式。"
+              : "当前采用推进模式。"
+        )
         : "当前采用进攻模式。";
-  const reasons = [...best.reasons]
+  const reasons = normalizeReasonPriorities(best.reasons)
+    .filter((reason) => reason.polarity !== "negative")
     .sort((a, b) => b.priority - a.priority)
     .slice(0, 4)
     .map((reason) => `- ${reason.message}`);
-  return [
+  const warnings = best.reasons
+    .filter((reason) => reason.polarity === "negative")
+    .map((reason) => `- ${reason.message}`);
+  const lines = [
     `推荐：切 ${best.discard}。`,
     modeText,
     "理由：",
     ...reasons,
-  ].join("\n");
+  ];
+  if (warnings.length > 0) {
+    lines.push("注意：", ...warnings);
+  }
+  return lines.join("\n");
 }
 
 export function buildVisibleTilesFromState(state: Pick<GameState, "self" | "opponents" | "doraIndicators" | "lastDraw">): number[] {

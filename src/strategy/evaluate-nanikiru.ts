@@ -3,6 +3,7 @@ import type { TileInfo } from "../hand/paili.ts";
 import type { DiscardAnalysis, DiscardCandidate } from "../service/analyze.ts";
 import { evaluateShape } from "./evaluators/evaluate-shape.ts";
 import { evaluateValuePotential } from "./evaluators/evaluate-value.ts";
+import { evaluateRouteCoherence } from "./evaluators/evaluate-route.ts";
 import { evaluateDefense } from "./evaluators/evaluate-defense.ts";
 import type { NanikiruPolicy } from "./nanikiru-policy.ts";
 import { DEFAULT_NANIKIRU_POLICY } from "./nanikiru-policy.ts";
@@ -14,6 +15,7 @@ export interface NanikiruScoreBreakdown {
   ukeire: number;
   goodShape: number;
   shape: number;
+  route: number;
   value: number;
   defense: number;
 }
@@ -44,9 +46,11 @@ export function evaluateNanikiru(
 ): EvaluatedNanikiruAnalysis {
   const evaluated = analysis.candidates
     .map((candidate) => evaluateCandidate(analysis, candidate, policy, context))
-    .sort((a, b) => b.score - a.score || b.totalWaits - a.totalWaits);
+    .sort(compareCandidates);
 
-  addComparativeReasons(evaluated);
+  const ordered = orderRecommendationCandidates(evaluated, analysis, policy);
+
+  addComparativeReasons(ordered);
 
   return {
     input: analysis.input,
@@ -56,8 +60,8 @@ export function evaluateNanikiru(
     shanten: analysis.shanten,
     isTenpai: analysis.isTenpai,
     isAgari: analysis.isAgari,
-    candidates: evaluated,
-    recommendation: evaluated[0]?.discard,
+    candidates: ordered,
+    recommendation: ordered[0]?.discard,
     raw: analysis.raw,
   };
 }
@@ -70,6 +74,7 @@ function evaluateCandidate(
 ): EvaluatedNanikiruCandidate {
   const afterDiscard = removeOneTile(analysis.hand, candidate.discard);
   const reasons: Reason[] = [];
+  const isShantenBack = candidate.shanten > analysis.shanten;
 
   const shantenScore = -candidate.shanten * policy.shantenWeight;
   reasons.push({
@@ -80,43 +85,58 @@ function evaluateCandidate(
     data: { discard: candidate.discard, shanten: candidate.shanten },
   });
 
-  const ukeireScore = candidate.totalWaits * policy.ukeireWeight;
+  const ukeireMultiplier = isShantenBack ? policy.shantenBackUkeireMultiplier : 1;
+  const ukeireScore = candidate.totalWaits * policy.ukeireWeight * ukeireMultiplier;
   reasons.push({
     type: "ukeire",
-    polarity: "positive",
+    polarity: isShantenBack ? "neutral" : "positive",
     priority: 90,
-    message: `切 ${candidate.discard} 后总进张 ${candidate.totalWaits} 枚。`,
-    data: { discard: candidate.discard, totalWaits: candidate.totalWaits },
+    message: isShantenBack
+      ? `切 ${candidate.discard} 会退向，${candidate.totalWaits} 枚进张按改良价值折算。`
+      : `切 ${candidate.discard} 后总进张 ${candidate.totalWaits} 枚。`,
+    data: {
+      discard: candidate.discard,
+      totalWaits: candidate.totalWaits,
+      shantenBack: isShantenBack,
+      multiplier: ukeireMultiplier,
+    },
   });
 
-  const goodShapeScore = candidate.goodShapeCount * policy.goodShapeWeight;
+  const goodShapeMultiplier = isShantenBack ? policy.shantenBackGoodShapeMultiplier : 1;
+  const goodShapeScore = candidate.goodShapeCount * policy.goodShapeWeight * goodShapeMultiplier;
   if (candidate.goodShapeCount > 0) {
     reasons.push({
       type: "good_shape",
-      polarity: "positive",
+      polarity: isShantenBack ? "neutral" : "positive",
       priority: 75,
-      message: `其中好形相关进张 ${candidate.goodShapeCount} 枚。`,
+      message: isShantenBack
+        ? `退向后的好形相关进张 ${candidate.goodShapeCount} 枚，按改良价值折算。`
+        : `其中好形相关进张 ${candidate.goodShapeCount} 枚。`,
       data: {
         discard: candidate.discard,
         goodShapeCount: candidate.goodShapeCount,
         goodShapeDraws: candidate.goodShapeDraws,
+        shantenBack: isShantenBack,
+        multiplier: goodShapeMultiplier,
       },
     });
   }
 
   const shapeEvaluation = evaluateShape(afterDiscard, candidate);
+  const routeEvaluation = evaluateRouteCoherence(analysis.hand, afterDiscard, candidate.discard, policy, context);
   const valueEvaluation = evaluateValuePotential(afterDiscard, candidate.discard, policy, {
     shanten: candidate.shanten,
     waits: candidate.waits,
     context,
   });
-  const defenseEvaluation = evaluateDefense(candidate.discard, context);
+  const defenseEvaluation = evaluateDefense(candidate.discard, context, afterDiscard);
 
   const scoreBreakdown: NanikiruScoreBreakdown = {
     shanten: shantenScore,
     ukeire: ukeireScore,
     goodShape: goodShapeScore,
     shape: shapeEvaluation.score * policy.shapeWeight,
+    route: routeEvaluation.score * policy.routeWeight,
     value: valueEvaluation.score * policy.valueWeight,
     defense: defenseEvaluation.score * policy.defenseWeight,
   };
@@ -130,10 +150,42 @@ function evaluateCandidate(
     reasons: [
       ...reasons,
       ...shapeEvaluation.reasons,
+      ...routeEvaluation.reasons,
       ...valueEvaluation.reasons,
       ...defenseEvaluation.reasons,
     ],
   };
+}
+
+function compareCandidates(a: EvaluatedNanikiruCandidate, b: EvaluatedNanikiruCandidate): number {
+  return b.score - a.score || b.totalWaits - a.totalWaits;
+}
+
+function orderRecommendationCandidates(
+  candidates: EvaluatedNanikiruCandidate[],
+  analysis: DiscardAnalysis,
+  policy: NanikiruPolicy,
+): EvaluatedNanikiruCandidate[] {
+  const nonBack = candidates.filter((candidate) => candidate.shanten <= analysis.shanten);
+  if (nonBack.length === 0) {
+    return candidates;
+  }
+
+  const shantenBack = candidates.filter((candidate) => candidate.shanten > analysis.shanten);
+  if (shantenBack.length === 0) {
+    return candidates;
+  }
+
+  const bestNonBack = nonBack[0];
+  const allowedBack = shantenBack.filter((candidate) => (
+    candidate.scoreBreakdown.defense >= bestNonBack.scoreBreakdown.defense + policy.shantenBackDefenseOverrideDelta
+  ));
+  const heldBack = shantenBack.filter((candidate) => !allowedBack.includes(candidate));
+
+  return [
+    ...[...nonBack, ...allowedBack].sort(compareCandidates),
+    ...heldBack.sort(compareCandidates),
+  ];
 }
 
 function addComparativeReasons(candidates: EvaluatedNanikiruCandidate[]): void {
@@ -180,6 +232,25 @@ function addComparativeReasons(candidates: EvaluatedNanikiruCandidate[]): void {
         secondaryRoute: bestValueRoute.secondary,
         secondPrimaryRoute: secondValueRoute.primary,
         secondSecondaryRoute: secondValueRoute.secondary,
+      },
+    });
+  }
+
+  if (
+    best.totalWaits < second.totalWaits
+    && best.scoreBreakdown.defense > second.scoreBreakdown.defense
+  ) {
+    best.reasons.push({
+      type: "defenseComparison",
+      polarity: "positive",
+      priority: 88,
+      message: `相比切 ${second.discard}，切 ${best.discard} 牺牲部分进张但显著降低对威胁者风险并保留后续防守资源。`,
+      data: {
+        discard: best.discard,
+        secondDiscard: second.discard,
+        totalWaits: best.totalWaits,
+        secondTotalWaits: second.totalWaits,
+        defenseDelta: best.scoreBreakdown.defense - second.scoreBreakdown.defense,
       },
     });
   }

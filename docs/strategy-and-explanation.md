@@ -19,10 +19,10 @@
 - 巡目。
 - 宝牌。
 - 对手立直和副露威胁。当前已有防守 MVP。
-- 安全度。当前已有现物、筋、壁、字牌见张和宝牌风险。
-- 当前顺位和点差。
-- 亲家/子家。
-- 南场收束策略。
+- 安全度。当前已有现物、分级筋、无筋中张分级、壁、字牌见张、宝牌风险、一发风险、亲家风险、防守余力和后续防守不足惩罚。
+- 当前顺位和点差。当前已有南场领先/落后、终局附近、亲家相关和南四微差避四的第一版攻守阈值。
+- 亲家/子家。当前已纳入自家亲家推进收益和亲家威胁风险。
+- 南场收束策略。当前已有南场领先偏守、南场落后偏攻、终局附近领先强防守，以及南四三位微差时的抢和结束、保听流局、防放铳和四位追分目标。
 
 因此解释不能依赖一个越来越复杂的固定模板去反推“为什么这么打”。更合适的方式是：**每个评分模块在计算分数时同时产出理由，解释层只负责筛选和渲染这些理由。**
 
@@ -59,7 +59,9 @@ type ReasonType =
   | "good_shape"
   | "shape"
   | "value"
+  | "highPoints"
   | "defense"
+  | "defenseComparison"
   | "riichi"
   | "placement"
   | "risk"
@@ -518,7 +520,7 @@ tanyaoRouteScore += breakYakuhaiPairForTanyaoBonus
 
 以下项目等完整局面和规则模块更成熟后再实现：
 
-- 将点棒状况和排名需求纳入打点权重。
+- 更精细的条件计算，例如具体需要几番逆转、二位/三位目标和避四 EV。
 - 纯全带幺九与混全带幺九的细分番型价值。
 
 ## 第一版局面策略和防守
@@ -545,14 +547,118 @@ GameState
 - 无立直威胁：`attack`。
 - 有立直威胁且自己两向听以上：`defense`。
 - 有立直威胁且自己听牌：`push`。
-- 有立直威胁且自己一向听：`balance`。
+- 有立直威胁且自己一向听高打点：`push`。
+- 有立直威胁且自己普通一向听：`balance`。
+
+高打点手牌当前由两个信号判定：
+
+- 自家手牌中宝牌数量达到 2 张以上。
+- 或局面对象额外提供的 `averageWaitPoints` 达到 7700 点以上。
 
 不同模式只调整权重，不改变底层牌理计算：
 
 - `defense`：显著提高 `defenseWeight`，降低进张和好形权重。
-- `balance`：提高防守权重，同时保留牌效判断。
+- `balance`：提高防守权重，同时保留牌效判断；高打点时防守权重降为 2，普通局面为 5。
 - `push`：保留一定防守惩罚，提高打点权重。
 - `attack`：使用默认何切权重。
+
+### 点棒/局况调整
+
+当前局况模块位于：
+
+```text
+src/strategy/placement.ts
+```
+
+它从 `GameState` 计算：
+
+- 自家当前排名。
+- 与上一名、第一名、第四名的点差。
+- 是否南场。
+- 是否南四。
+- 是否终局附近，当前定义为南场且 `kyoku >= 3`。
+- 巡目。
+- 自家是否亲家。
+- 威胁者是否亲家。
+- 三位领先四位的点差。
+- 四位是否已经立直或两副露以上。
+
+局况模块输出：
+
+```ts
+type PlacementAdjustment = {
+  pushBias: number;
+  defenseWeightMul: number;
+  valueWeightMul: number;
+  shantenWeightMul: number;
+  ukeireWeightMul: number;
+  avoidFourthGoal: "none" | "winOut" | "tenpaiKeep" | "fold" | "chase";
+  reasons: Reason[];
+};
+```
+
+当前规则：
+
+```text
+南场领先 12000 点以上：defenseWeightMul *= 1.4，pushBias -= 2
+终局附近且自家第一：defenseWeightMul *= 1.8，pushBias -= 4
+南场三位/四位且距一位 12000 点以上：valueWeightMul *= 1.25，pushBias += 2
+自家亲家：valueWeightMul *= 1.1，pushBias += 1
+威胁者亲家：defenseWeightMul *= 1.25，pushBias -= 1
+有供托或本场达到 2 本场以上：valueWeightMul *= 1.05
+供托 2 根以上或本场 3 本场以上：pushBias += 1
+```
+
+南四避四目标会读取当前向听数：
+
+```text
+自家四位：goal = chase，pushBias += 2，valueWeightMul *= 1.25，ukeireWeightMul *= 1.05
+南四三位领先四位 4000 点以内且听牌：goal = winOut，偏向和牌结束
+南四三位领先四位 4000 点以内且一向听：goal = tenpaiKeep，提高向听和进张权重
+南四三位微差且早巡两向听以上：goal = none，避免起手直接弃和
+南四三位微差且终盘手慢、四位立直或两副露以上：goal = fold，明显提高防守权重
+南三或南场后半三位接近四位：一向听以内偏保听，手慢且四位进攻时偏防守
+```
+
+局况只做高层模式和权重修正，不直接改某张牌的底层牌理分：
+
+```text
+GameState
+  -> chooseStrategyMode 得到基础模式
+  -> evaluatePlacementAdjustment 得到局况调整
+  -> adjustModeByPlacement 修正模式
+  -> applyModePolicy
+  -> applyPlacementPolicy
+  -> evaluateNanikiru
+```
+
+当前模式修正规则较保守：
+
+```text
+goal = winOut：attack/balance -> push
+goal = tenpaiKeep：不直接转 defense，主要通过 shantenWeight 和 ukeireWeight 表达
+goal = fold：attack/balance -> defense，push -> balance
+goal = chase：attack/balance -> push
+balance + pushBias >= 2 -> push
+balance + pushBias <= -2 -> defense
+push + pushBias <= -3 -> balance
+```
+
+它不会把两向听以上的 `defense` 直接拉成 `push`。
+
+局况模块会产出 `placement` reasons，例如：
+
+```text
+- 南场领先较多，当前优先降低放铳风险。
+- 终局附近处于领先，防守权重明显提高。
+- 南场落后较多，需要保留高打点推进路线。
+- 自家亲家，推进连庄收益略高。
+- 威胁者是亲家，放铳损失更高。
+- 南四与四位微差，当前听牌，和牌结束是主要避四路线。
+- 南四与四位微差，流局听牌也能避免罚符逆转，当前优先保听和速度。
+- 南四手牌较慢且四位正在进攻，当前优先避免放铳落四。
+- 当前四位，需要保留脱四所需打点推进。
+```
 
 ### 防守 evaluator
 
@@ -570,20 +676,76 @@ src/strategy/evaluators/evaluate-defense.ts
 当前支持的安全/危险特征：
 
 - 现物：最高安全度，尤其对立直者。
-- 筋：降低数牌危险度。
+- 筋：按牌位分级降低数牌危险度，`1/9 > 2/8 > 4/5/6 > 3/7`。
 - 壁：相邻牌四枚见时降低相关数牌危险度。
 - 字牌见张：两枚见、三枚见以上逐步提高安全度。
 - 幺九牌：基础危险度低于中张。
 - 宝牌：显著提高危险度。
 - 宝牌周边：小幅提高危险度。
 - 晚巡：提高基础危险度。
+- 无筋中张：按牌位提高危险度，`5 > 4/6 > 3/7 > 2/8`。
+- 一发巡：威胁者处于一发状态时提高危险度。
+- 亲家威胁：威胁者为东家时提高危险度。
+- 防守余力：切牌后剩余手牌中的现物和分级筋会形成 `defenseReserveScore`。
+- 后续防守不足惩罚：切牌后较可靠防守牌数量不足时扣分。
+
+当前筋牌安全分：
+
+```text
+现物 = 100
+1/9 筋 = 45
+2/8 筋 = 35
+4/5/6 筋 = 20
+3/7 筋 = 10
+```
+
+“较可靠防守牌”当前按安全分 `>= 35` 统计，因此现物、`1/9` 筋和 `2/8` 筋计入，`4/5/6` 与 `3/7` 筋不计入。
+
+当前无筋中张危险度补正：
+
+```text
+5 = +30
+4/6 = +24
+3/7 = +16
+2/8 = +8
+```
+
+当前局面风险补正：
+
+```text
+一发巡 = +30
+亲家威胁 = +25
+```
+
+后续防守不足惩罚：
+
+```text
+0 张较可靠防守牌：-220
+1 张较可靠防守牌：-120
+2 张较可靠防守牌：-50
+3 张及以上：0
+```
+
+防守分的当前结构为：
+
+```text
+defenseScore =
+  immediateSafetyMinusDanger
+  + defenseReserveScore
+  - futureDefensePenalty
+```
 
 防守模块产出 `defense` 和 `risk` reasons，例如：
 
 ```text
 - 切 4z 是现物，安全度最高。
 - 5m 是宝牌，对威胁者风险较高。
-- 7p 有筋可依，危险度下降。
+- 5m 是无筋中张，按牌位提高危险度。
+- 对手处于一发巡，当前切牌风险上升。
+- 威胁者是亲家，放铳损失更高。
+- 7p 有筋可依，安全度按牌位修正。
+- 切 4z 后仍保留 3 张较可靠防守牌。
+- 切 5m 后后续防守资源偏少。
 ```
 
 当前防守 evaluator 仍是 MVP，不包含：
@@ -593,7 +755,7 @@ src/strategy/evaluators/evaluate-defense.ts
 - 副露手染手危险色。
 - 对手手出/摸切序列。
 - 铳点期望。
-- 排名和点差驱动的推进阈值。
+- 精确铳点期望和逆转 EV。
 
 ## 第一版 reasons 示例
 
@@ -635,8 +797,8 @@ src/strategy/evaluators/evaluate-defense.ts
 解释层只做三件事：
 
 1. 选择推荐候选。
-2. 从推荐候选和必要的对比候选中挑选高优先级 reasons。
-3. 将 reasons 渲染为中文文本。
+2. 从推荐候选和必要的对比候选中挑选高优先级非负面 reasons。
+3. 将 reasons 渲染为中文文本，并将负面 reasons 单独放到“注意”。
 
 解释层不应该重新计算牌理、打点或防守，也不应该从最终推荐结果反推原因。
 
@@ -645,13 +807,18 @@ src/strategy/evaluators/evaluate-defense.ts
 ```ts
 function renderNanikiruExplanation(result: EvaluatedNanikiruAnalysis): string {
   const best = result.candidates[0];
-  const reasons = best.reasons
+  const reasons = normalizeReasonPriorities(best.reasons)
+    .filter((reason) => reason.polarity !== "negative")
     .sort((a, b) => b.priority - a.priority)
     .slice(0, 4);
+  const warnings = best.reasons.filter((reason) => reason.polarity === "negative");
 
   return [
     `推荐：切 ${best.discard}。`,
+    "理由：",
     ...reasons.map((reason) => reason.message),
+    "注意：",
+    ...warnings.map((reason) => reason.message),
   ].join("\n");
 }
 ```
@@ -675,6 +842,8 @@ function renderNanikiruExplanation(result: EvaluatedNanikiruAnalysis): string {
 理由：
 - 当前对手立直，1z 是现物，安全度最高。
 - 自己仍是两向听，进攻收益不足以支撑推进。
+
+注意：
 - 虽然切 7s 牌效更高，但 7s 对立直者危险度较高。
 ```
 
@@ -693,6 +862,8 @@ function renderNanikiruExplanation(result: EvaluatedNanikiruAnalysis): string {
 ```text
 src/strategy/
   reason.ts
+  high-value.ts
+  placement.ts
   nanikiru-context.ts
   nanikiru-policy.ts
   evaluate-nanikiru.ts
@@ -740,8 +911,8 @@ src/explanation/
 
 后续建议顺序：
 
-1. 扩展防守 evaluator：早外侧、危险筋牌分级、副露染手危险色、手出/摸切信息。
+1. 扩展防守 evaluator：早外侧、里筋/跨筋/双无筋、副露染手危险色、手出/摸切信息。
 2. 加入立直判断动作：听牌时评估立直、默听和切牌推进。
 3. 加入副露动作判断：吃、碰、杠的合法性和收益/风险评分。
-4. 加入排名和点差策略：南场、亲家、领先/落后时调整推进阈值。
+4. 扩展排名和点差策略：具体逆转条件、二位目标、避四 EV 和局收支阈值。
 5. 等策略参数稳定后，再考虑添加 `config/policies/*.json` 加载能力。

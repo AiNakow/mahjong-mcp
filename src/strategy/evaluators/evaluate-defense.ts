@@ -10,14 +10,24 @@ interface ThreatEvaluation {
   reasons: EvaluationPart["reasons"];
 }
 
-export function evaluateDefense(discard: TileId, context: NanikiruContext = {}): EvaluationPart {
+export function evaluateDefense(discard: TileId, context?: NanikiruContext): EvaluationPart;
+export function evaluateDefense(
+  discard: TileId,
+  context: NanikiruContext | undefined,
+  remainingTiles: readonly TileId[],
+): EvaluationPart;
+export function evaluateDefense(
+  discard: TileId,
+  context: NanikiruContext = {},
+  remainingTiles: readonly TileId[] = [],
+): EvaluationPart {
   const threats = (context.opponents ?? []).filter(isThreateningOpponent);
   if (threats.length === 0) {
     return { score: 0, reasons: [] };
   }
 
   const evaluations = threats.map((opponent) => evaluateAgainstOpponent(discard, opponent, context));
-  const score = evaluations.reduce((total, item) => total + item.score, 0);
+  const immediateScore = evaluations.reduce((total, item) => total + item.score, 0);
   const reasons = evaluations.flatMap((item) => item.reasons);
 
   const worst = evaluations.reduce<ThreatEvaluation | undefined>((current, item) => (
@@ -33,7 +43,30 @@ export function evaluateDefense(discard: TileId, context: NanikiruContext = {}):
     });
   }
 
-  return { score, reasons };
+  const reserve = calculateDefenseReserveScore(remainingTiles, threats);
+  const safeTileCount = countSafeTilesAfterDiscard(remainingTiles, threats);
+  const penalty = futureDefensePenalty(safeTileCount);
+
+  if (reserve >= 100) {
+    reasons.push({
+      type: "defense",
+      polarity: "positive",
+      priority: 74,
+      message: `切 ${discard} 后仍保留 ${safeTileCount} 张较可靠防守牌。`,
+      data: { discard, defenseReserve: reserve, safeTileCount },
+    });
+  }
+  if (penalty > 0) {
+    reasons.push({
+      type: "risk",
+      polarity: "negative",
+      priority: safeTileCount === 0 ? 88 : 70,
+      message: `切 ${discard} 后后续防守资源偏少。`,
+      data: { discard, safeTileCount, futureDefensePenalty: penalty },
+    });
+  }
+
+  return { score: immediateScore + reserve - penalty, reasons };
 }
 
 function isThreateningOpponent(opponent: OpponentContext): boolean {
@@ -84,15 +117,28 @@ function evaluateAgainstOpponent(
     if (isTerminal(discard)) {
       danger -= 12;
     }
-    if (isSuji(discard, discards)) {
-      safety += 36;
+    const sujiSafety = sujiSafetyScore(discard, discards.includes(discard), discards);
+    if (sujiSafety > 0) {
+      safety += sujiSafety;
       reasons.push({
         type: "defense",
         polarity: "positive",
         priority: 68,
-        message: `${discard} 有筋可依，危险度下降。`,
-        data: { discard },
+        message: `${discard} 有筋可依，安全度按牌位修正。`,
+        data: { discard, sujiSafety },
       });
+    } else {
+      const middleDanger = unSujiMiddleDanger(discard);
+      if (middleDanger > 0) {
+        danger += middleDanger;
+        reasons.push({
+          type: "risk",
+          polarity: "negative",
+          priority: getUnSujiMiddleDangerPriority(middleDanger),
+          message: `${discard} 是无筋中张，按牌位提高危险度。`,
+          data: { discard, middleDanger },
+        });
+      }
     }
     if (hasWallSupport(discard, visibleTiles)) {
       safety += 50;
@@ -123,6 +169,26 @@ function evaluateAgainstOpponent(
   if (turn >= 13) {
     danger += 15;
   }
+  if (opponent.ippatsu === true) {
+    danger += 30;
+    reasons.push({
+      type: "risk",
+      polarity: "negative",
+      priority: 86,
+      message: "对手处于一发巡，当前切牌风险上升。",
+      data: { discard },
+    });
+  }
+  if (isDealer(opponent)) {
+    danger += 25;
+    reasons.push({
+      type: "risk",
+      polarity: "negative",
+      priority: 80,
+      message: "威胁者是亲家，放铳损失更高。",
+      data: { discard, seatWind: opponent.seatWind },
+    });
+  }
 
   const score = safety - danger;
   return { score, danger, safety, reasons };
@@ -150,6 +216,117 @@ function isSuji(tile: TileId, discards: readonly TileId[]): boolean {
     .filter((item) => item >= 1 && item <= 9)
     .map((item) => `${item}${suit}` as TileId);
   return anchors.some((anchor) => discards.includes(anchor));
+}
+
+function calculateDefenseReserveScore(remainingTiles: readonly TileId[], threats: readonly OpponentContext[]): number {
+  let score = 0;
+
+  for (const tile of remainingTiles) {
+    score += getDefenseReserveTileScore(tile, threats);
+  }
+
+  return score;
+}
+
+function countSafeTilesAfterDiscard(remainingTiles: readonly TileId[], threats: readonly OpponentContext[]): number {
+  return remainingTiles.filter((tile) => getDefenseReserveTileScore(tile, threats) >= 35).length;
+}
+
+function getDefenseReserveTileScore(tile: TileId, threats: readonly OpponentContext[]): number {
+  const threatDiscards = threats.flatMap((opponent) => (opponent.discards ?? []).map((discard) => discard.tile));
+  if (threatDiscards.includes(tile)) {
+    return 100;
+  }
+  return sujiSafetyScore(tile, false, threatDiscards);
+}
+
+function futureDefensePenalty(safeTileCountAfterDiscard: number): number {
+  if (safeTileCountAfterDiscard === 0) {
+    return 220;
+  }
+  if (safeTileCountAfterDiscard === 1) {
+    return 120;
+  }
+  if (safeTileCountAfterDiscard === 2) {
+    return 50;
+  }
+  return 0;
+}
+
+function sujiSafetyScore(tile: TileId, isGenbutsu: boolean, discards: readonly TileId[]): number {
+  if (isGenbutsu) {
+    return 100;
+  }
+  if (!isSuji(tile, discards)) {
+    return 0;
+  }
+  const rank = Number(tile[0]);
+  if (isSujiTerminalRank(rank)) {
+    return 45;
+  }
+  if (isSuji28Rank(rank)) {
+    return 35;
+  }
+  if (isSuji456Rank(rank)) {
+    return 20;
+  }
+  if (isSuji37Rank(rank)) {
+    return 10;
+  }
+  return 0;
+}
+
+function isSujiTerminalRank(rank: number): boolean {
+  return rank === 1 || rank === 9;
+}
+
+function isSuji28Rank(rank: number): boolean {
+  return rank === 2 || rank === 8;
+}
+
+function isSuji456Rank(rank: number): boolean {
+  return rank === 4 || rank === 5 || rank === 6;
+}
+
+function isSuji37Rank(rank: number): boolean {
+  return rank === 3 || rank === 7;
+}
+
+function unSujiMiddleDanger(tile: TileId): number {
+  if (tile[1] === "z" || isTerminal(tile)) {
+    return 0;
+  }
+  const rank = Number(tile[0]);
+  if (rank === 5) {
+    return 30;
+  }
+  if (rank === 4 || rank === 6) {
+    return 24;
+  }
+  if (rank === 3 || rank === 7) {
+    return 16;
+  }
+  if (rank === 2 || rank === 8) {
+    return 8;
+  }
+  return 0;
+}
+
+function getUnSujiMiddleDangerPriority(middleDanger: number): number {
+  if (middleDanger >= 30) {
+    return 83;
+  }
+  if (middleDanger >= 24) {
+    return 78;
+  }
+  if (middleDanger >= 16) {
+    return 72;
+  }
+  return 66;
+}
+
+function isDealer(opponent: OpponentContext): boolean {
+  return opponent.seatWind === "1z";
 }
 
 function hasWallSupport(tile: TileId, visibleTiles?: Counts34): boolean {
