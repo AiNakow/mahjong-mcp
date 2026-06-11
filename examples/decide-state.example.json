@@ -1,0 +1,65 @@
+{
+  "round": {
+    "bakaze": "1z",
+    "kyoku": 1,
+    "honba": 0,
+    "riichiSticks": 0,
+    "turn": 9
+  },
+  "self": {
+    "seatWind": "1z",
+    "points": 25000,
+    "hand": ["3m", "4m", "5m", "3p", "5p", "1s", "3s", "7s", "8s", "9s", "1z", "2z", "3z", "4z"],
+    "calls": [],
+    "discards": [],
+    "riichi": false,
+    "ippatsu": false,
+    "menzen": true
+  },
+  "opponents": [
+    {
+      "seatWind": "4z",
+      "points": 25000,
+      "calls": [],
+      "discards": [
+        { "tile": "4z", "tsumogiri": false },
+        { "tile": "6m", "tsumogiri": false },
+        { "tile": "9p", "tsumogiri": false }
+      ],
+      "riichi": true,
+      "ippatsu": false,
+      "menzen": true
+    },
+    {
+      "seatWind": "3z",
+      "points": 25000,
+      "calls": [],
+      "discards": [],
+      "riichi": false,
+      "ippatsu": false,
+      "menzen": true
+    },
+    {
+      "seatWind": "2z",
+      "points": 25000,
+      "calls": [],
+      "discards": [],
+      "riichi": false,
+      "ippatsu": false,
+      "menzen": true
+    }
+  ],
+  "doraIndicators": [],
+  "visibleTiles": [
+    0, 0, 1, 1, 1, 1, 0, 0, 0,
+    0, 0, 1, 0, 1, 0, 0, 0, 1,
+    1, 0, 1, 0, 0, 0, 1, 1, 1,
+    1, 1, 1, 2, 0, 0, 0
+  ],
+  "rules": {
+    "akaDora": true,
+    "kuitan": true,
+    "doubleRon": true,
+    "countDoubleYakuman": false
+  }
+}

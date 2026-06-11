@@ -1,5 +1,6 @@
-import type { TileId } from "../../core/tile.ts";
+import { TILES_34, type TileId } from "../../core/tile.ts";
 import { calculateAgariScore } from "../../scoring/index.ts";
+import { analyzeTiles } from "../../hand/paili.ts";
 import type { NanikiruPolicy } from "../nanikiru-policy.ts";
 import { isOpenHand, type NanikiruContext } from "../nanikiru-context.ts";
 import type { EvaluationPart } from "./evaluation.ts";
@@ -7,6 +8,8 @@ import type { TileInfo } from "../../hand/paili.ts";
 
 export type ValueRoute =
   | "scoring"
+  | "two_layer_scoring"
+  | "dora"
   | "yakuhai"
   | "tanyao"
   | "chiitoi"
@@ -23,6 +26,15 @@ interface ValueRouteScore {
   data?: Record<string, unknown>;
 }
 
+interface TwoLayerEstimate {
+  averagePoints: number;
+  bestDraw?: TileId;
+  bestAverage: number;
+  totalRemaining: number;
+}
+
+const TWO_LAYER_ESTIMATE_CACHE = new Map<string, TwoLayerEstimate>();
+
 export function evaluateValuePotential(
   afterDiscard: readonly TileId[],
   discard: TileId,
@@ -32,6 +44,8 @@ export function evaluateValuePotential(
   const nanikiruContext = context.context ?? {};
   const routeScores = [
     evaluateTenpaiScoringRoute(afterDiscard, discard, policy, context),
+    evaluateIishantenTwoLayerScoringRoute(afterDiscard, discard, policy, context),
+    evaluateDoraRoute(afterDiscard, discard, policy, nanikiruContext),
     evaluateYakuhaiRoute(afterDiscard, discard, policy, nanikiruContext),
     evaluateTanyaoRoute(afterDiscard, discard, policy, nanikiruContext),
     evaluateChiitoiRoute(afterDiscard, discard, policy),
@@ -83,6 +97,156 @@ export function evaluateValuePotential(
   return { score, reasons };
 }
 
+function evaluateIishantenTwoLayerScoringRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext },
+): ValueRouteScore {
+  if (
+    !policy.useTwoLayerValueForIishanten
+    || context.shanten !== 1
+    || !context.waits
+    || context.waits.length === 0
+  ) {
+    return { route: "two_layer_scoring", score: 0, reasons: [] };
+  }
+
+  const cacheKey = getTwoLayerCacheKey(afterDiscard, policy, context);
+  const cached = TWO_LAYER_ESTIMATE_CACHE.get(cacheKey);
+  const estimate = cached ?? estimateIishantenTwoLayer(afterDiscard, policy, context);
+  if (!cached) {
+    TWO_LAYER_ESTIMATE_CACHE.set(cacheKey, estimate);
+  }
+
+  const { averagePoints, bestDraw, bestAverage, totalRemaining } = estimate;
+  if (totalRemaining <= 0 || averagePoints < policy.twoLayerMinAveragePoints) {
+    return { route: "two_layer_scoring", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(averagePoints / policy.twoLayerValueDivisor);
+  return {
+    route: "two_layer_scoring",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: averagePoints >= 7700 ? 78 : 64,
+      message: `一向听进张转听牌后的平均打点约 ${averagePoints} 点。`,
+      data: {
+        discard,
+        averagePoints,
+        bestDraw,
+        bestAverage: Math.round(bestAverage),
+        totalRemaining,
+        twoLayerValueDivisor: policy.twoLayerValueDivisor,
+        primaryRoute: "two_layer_scoring",
+      },
+    }],
+  };
+}
+
+function estimateIishantenTwoLayer(
+  afterDiscard: readonly TileId[],
+  policy: NanikiruPolicy,
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext },
+): TwoLayerEstimate {
+  const mode = isOpenHand(context.context) ? 1 : 0;
+  let weightedTotal = 0;
+  let totalRemaining = 0;
+  let bestDraw: TileId | undefined;
+  let bestAverage = 0;
+
+  const drawsToEvaluate = [...(context.waits ?? [])]
+    .filter((draw) => draw.remaining > 0)
+    .sort((a, b) => b.remaining - a.remaining)
+    .slice(0, policy.twoLayerMaxDrawTypes);
+
+  for (const draw of drawsToEvaluate) {
+    if (draw.remaining <= 0) {
+      continue;
+    }
+    const afterDraw = [...afterDiscard, draw.id];
+    const analysis = analyzeTiles(afterDraw, mode, { includeShantenBack: true });
+    if (analysis.kind !== "discard") {
+      continue;
+    }
+
+    let bestTenpaiAverage = 0;
+    const tenpaiDiscards = analysis.discards
+      .filter((nextDiscard) => nextDiscard.shanten === 0)
+      .sort((a, b) => b.total_waits - a.total_waits)
+      .slice(0, policy.twoLayerMaxTenpaiDiscards);
+    for (const nextDiscard of tenpaiDiscards) {
+      const tenpaiHand = removeOneTile(afterDraw, nextDiscard.discard.id);
+      const average = estimateWeightedAgariPoints(tenpaiHand, nextDiscard.waits, context.context, policy);
+      if (average > bestTenpaiAverage) {
+        bestTenpaiAverage = average;
+      }
+    }
+
+    if (bestTenpaiAverage <= 0) {
+      continue;
+    }
+    weightedTotal += bestTenpaiAverage * draw.remaining;
+    totalRemaining += draw.remaining;
+    if (bestTenpaiAverage > bestAverage) {
+      bestAverage = bestTenpaiAverage;
+      bestDraw = draw.id;
+    }
+  }
+
+  return {
+    averagePoints: totalRemaining > 0 ? Math.round(weightedTotal / totalRemaining) : 0,
+    bestDraw,
+    bestAverage,
+    totalRemaining,
+  };
+}
+
+function evaluateDoraRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+  context: NanikiruContext,
+): ValueRouteScore {
+  const doraTiles = (context.doraIndicators ?? []).map(nextDoraTile);
+  const doraCount = afterDiscard.filter((tile) => doraTiles.includes(tile)).length;
+  const doraSideCount = afterDiscard.filter((tile) => isDoraSide(tile, doraTiles)).length;
+  const akaDoraCount = Math.max(
+    0,
+    (context.akaDoraCount ?? 0) - (isNumberFive(discard) ? 1 : 0),
+  );
+  const score = doraCount * policy.doraBonus
+    + akaDoraCount * policy.akaDoraBonus
+    + Math.min(2, doraSideCount) * policy.doraSideBonus;
+
+  if (score <= 0) {
+    return { route: "dora", score: 0, reasons: [] };
+  }
+
+  return {
+    route: "dora",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: doraCount + akaDoraCount > 0 ? 74 : 48,
+      message: doraCount + akaDoraCount > 0
+        ? `保留 ${doraCount + akaDoraCount} 张宝牌/赤宝牌，打点潜力较高。`
+        : "保留宝牌周边牌，后续打点改良空间较好。",
+      data: {
+        discard,
+        doraTiles,
+        doraCount,
+        akaDoraCount,
+        doraSideCount,
+        primaryRoute: "dora",
+      },
+    }],
+  };
+}
+
 function evaluateTenpaiScoringRoute(
   afterDiscard: readonly TileId[],
   discard: TileId,
@@ -132,6 +296,73 @@ function evaluateTenpaiScoringRoute(
       data: { discard, bestWait, bestTotal, scoringValueDivisor: policy.scoringValueDivisor },
     }],
   };
+}
+
+function estimateWeightedAgariPoints(
+  tenpaiHand: readonly TileId[],
+  waits: readonly TileInfo[],
+  context: NanikiruContext = {},
+  policy: NanikiruPolicy,
+): number {
+  let weightedTotal = 0;
+  let totalRemaining = 0;
+  const assumeRiichi = policy.assumeRiichiForMenzenTwoLayer && isMenzenContext(context);
+
+  for (const wait of waits) {
+    if (wait.remaining <= 0) {
+      continue;
+    }
+    const result = calculateAgariScore({
+      hand: [...tenpaiHand, wait.id],
+      winningTile: wait.id,
+      method: "ron",
+      calls: context.calls,
+      seatWind: context.seatWind,
+      bakaze: context.bakaze,
+      rules: context.rules,
+      honba: context.honba,
+      riichiSticks: context.riichiSticks,
+      doraIndicators: context.doraIndicators,
+      uraDoraIndicators: context.uraDoraIndicators,
+      akaDoraCount: context.akaDoraCount,
+      riichi: assumeRiichi,
+    });
+    if (!result.best) {
+      continue;
+    }
+    weightedTotal += result.best.points.total * wait.remaining;
+    totalRemaining += wait.remaining;
+  }
+
+  return totalRemaining > 0 ? weightedTotal / totalRemaining : 0;
+}
+
+function getTwoLayerCacheKey(
+  afterDiscard: readonly TileId[],
+  policy: NanikiruPolicy,
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext },
+): string {
+  const scoringContext = context.context ?? {};
+  return JSON.stringify({
+    hand: [...afterDiscard].sort(),
+    waits: (context.waits ?? []).map((wait) => [wait.id, wait.remaining]),
+    calls: scoringContext.calls ?? [],
+    seatWind: scoringContext.seatWind,
+    bakaze: scoringContext.bakaze,
+    honba: scoringContext.honba,
+    riichiSticks: scoringContext.riichiSticks,
+    doraIndicators: scoringContext.doraIndicators ?? [],
+    uraDoraIndicators: scoringContext.uraDoraIndicators ?? [],
+    akaDoraCount: scoringContext.akaDoraCount ?? 0,
+    rules: scoringContext.rules,
+    maxDrawTypes: policy.twoLayerMaxDrawTypes,
+    maxTenpaiDiscards: policy.twoLayerMaxTenpaiDiscards,
+    assumeRiichi: policy.assumeRiichiForMenzenTwoLayer,
+  });
+}
+
+function isMenzenContext(context: NanikiruContext): boolean {
+  return (context.calls ?? []).every((call) => call.type === "ankan");
 }
 
 function evaluateYakuhaiRoute(
@@ -400,6 +631,15 @@ function countPairs(tiles: readonly TileId[]): number {
   return [...counts.values()].filter((count) => count >= 2).length;
 }
 
+function removeOneTile(tiles: readonly TileId[], tile: TileId): TileId[] {
+  const result = [...tiles];
+  const index = result.indexOf(tile);
+  if (index >= 0) {
+    result.splice(index, 1);
+  }
+  return result;
+}
+
 function getYakuhaiPairs(tiles: readonly TileId[], context: NanikiruContext): TileId[] {
   const counts = countTileIds(tiles);
   const yakuhaiTiles = new Set<TileId>(["5z", "6z", "7z"]);
@@ -519,6 +759,35 @@ function isTerminalOrHonor(tile: TileId): boolean {
   return tile[1] === "z" || tile[0] === "1" || tile[0] === "9";
 }
 
+function isNumberFive(tile: TileId): boolean {
+  return tile[1] !== "z" && tile[0] === "5";
+}
+
+function isDoraSide(tile: TileId, doraTiles: readonly TileId[]): boolean {
+  if (tile[1] === "z") {
+    return false;
+  }
+  const rank = Number(tile[0]);
+  return doraTiles.some((dora) => (
+    dora[1] === tile[1]
+    && dora[1] !== "z"
+    && Math.abs(Number(dora[0]) - rank) === 1
+  ));
+}
+
+function nextDoraTile(indicator: TileId): TileId {
+  const suit = indicator[1];
+  const rank = Number(indicator[0]);
+  if (suit === "z") {
+    if (rank >= 1 && rank <= 4) {
+      return TILES_34[27 + (rank % 4)];
+    }
+    return ({ 5: "6z", 6: "7z", 7: "5z" } as Record<number, TileId>)[rank];
+  }
+  const nextRank = rank === 9 ? 1 : rank + 1;
+  return `${nextRank}${suit}` as TileId;
+}
+
 function formatSuit(suit: "m" | "p" | "s"): string {
   if (suit === "m") {
     return "万子";
@@ -532,6 +801,12 @@ function formatSuit(suit: "m" | "p" | "s"): string {
 function formatRoute(route: ValueRoute): string {
   if (route === "scoring") {
     return "实算打点";
+  }
+  if (route === "two_layer_scoring") {
+    return "一向听转听牌打点";
+  }
+  if (route === "dora") {
+    return "宝牌";
   }
   if (route === "yakuhai") {
     return "役牌路线";

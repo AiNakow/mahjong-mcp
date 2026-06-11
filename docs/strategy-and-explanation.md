@@ -12,13 +12,14 @@
 - 形状保留。
 - 打点潜力。
 - 特殊路线，例如七对子、染手、断幺、役牌。
+- 若提供局面信息，还应考虑对手威胁和安全度。
 
-后续进入真实局面后，还会继续增加：
+进入真实局面后，策略还会继续增加：
 
 - 巡目。
 - 宝牌。
-- 对手立直和副露威胁。
-- 安全度。
+- 对手立直和副露威胁。当前已有防守 MVP。
+- 安全度。当前已有现物、筋、壁、字牌见张和宝牌风险。
 - 当前顺位和点差。
 - 亲家/子家。
 - 南场收束策略。
@@ -101,12 +102,13 @@ type EvaluatedNanikiruCandidate = {
     goodShape: number;
     shape: number;
     value: number;
+    defense: number;
   };
   reasons: Reason[];
 };
 ```
 
-第一版可以只做纯手牌评分，不处理防守和场况。
+纯手牌评分时 `defense` 为 0；当 `NanikiruContext` 提供对手威胁、弃牌河和可见牌信息时，防守 evaluator 会写入该分项。
 
 ## 第一版评分公式
 
@@ -119,6 +121,7 @@ score =
   + goodShapeScore
   + shapeScore
   + valueScore
+  + defenseScore
 ```
 
 默认权重：
@@ -130,6 +133,7 @@ const DEFAULT_NANIKIRU_POLICY = {
   goodShapeWeight: 8,
   shapeWeight: 1,
   valueWeight: 1,
+  defenseWeight: 1,
 };
 ```
 
@@ -140,6 +144,7 @@ const DEFAULT_NANIKIRU_POLICY = {
 - `goodShapeScore`：好型相关进张数量。
 - `shapeScore`：形状保留，例如两面、复合形、对子结构。
 - `valueScore`：打点潜力，例如断幺、役牌、七对子、染手。
+- `defenseScore`：安全度和危险度。无对手威胁信息时为 0。
 
 当前 `paili` 只返回最佳向听候选，所以 `shantenScore` 在第一阶段差异不大。但保留该字段有利于后续扩展到全候选评价。
 
@@ -171,6 +176,7 @@ type NanikiruPolicy = {
   goodShapeWeight: number;
   shapeWeight: number;
   valueWeight: number;
+  defenseWeight: number;
 
   yakuhaiPairBonus: number;
   tanyaoLeanBonus: number;
@@ -178,6 +184,19 @@ type NanikiruPolicy = {
   chiitoiBonus: number;
   honitsuSuitThreshold: number;
   honitsuBonus: number;
+  ittsuBonus: number;
+  sanshokuBonus: number;
+  chantaBonus: number;
+  toitoiBonus: number;
+  doraBonus: number;
+  akaDoraBonus: number;
+  doraSideBonus: number;
+  useTwoLayerValueForIishanten: boolean;
+  twoLayerValueDivisor: number;
+  twoLayerMinAveragePoints: number;
+  twoLayerMaxDrawTypes: number;
+  twoLayerMaxTenpaiDiscards: number;
+  assumeRiichiForMenzenTwoLayer: boolean;
   secondaryValueRouteRatio: number;
   yakuhaiTanyaoConflictDecay: number;
   breakYakuhaiPairForTanyaoBonus: number;
@@ -195,6 +214,7 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   goodShapeWeight: 8,
   shapeWeight: 1,
   valueWeight: 1,
+  defenseWeight: 1,
 
   yakuhaiPairBonus: 80,
   tanyaoLeanBonus: 60,
@@ -202,6 +222,19 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   chiitoiBonus: 50,
   honitsuSuitThreshold: 8,
   honitsuBonus: 80,
+  ittsuBonus: 65,
+  sanshokuBonus: 60,
+  chantaBonus: 45,
+  toitoiBonus: 55,
+  doraBonus: 90,
+  akaDoraBonus: 70,
+  doraSideBonus: 18,
+  useTwoLayerValueForIishanten: true,
+  twoLayerValueDivisor: 160,
+  twoLayerMinAveragePoints: 1500,
+  twoLayerMaxDrawTypes: 5,
+  twoLayerMaxTenpaiDiscards: 2,
+  assumeRiichiForMenzenTwoLayer: true,
   secondaryValueRouteRatio: 0.35,
   yakuhaiTanyaoConflictDecay: 0.6,
   breakYakuhaiPairForTanyaoBonus: 50,
@@ -373,16 +406,69 @@ yakuhai: 役牌路线
 tanyao: 断幺路线
 chiitoi: 七对子路线
 honitsu: 染手路线
+dora: 宝牌、赤宝牌和宝牌周边
 ittsu: 一气通贯路线
 sanshoku: 三色同顺路线
 chanta: 全带路线
 toitoi: 对对和路线
 scoring: 听牌实算打点
+two_layer_scoring: 一向听进张转听牌后的二层打点估算
 ```
 
 当候选切出后已经听牌，且 `useScoringForTenpaiValue` 为 true 时，value evaluator 会枚举该候选的待牌，调用 `calculateAgariScore` 估算最高和牌点数，并按 `scoringValueDivisor` 折算为打点路线分。默认 `scoringValueDivisor` 为 `100`，例如最高和牌点数 5200 点会贡献约 52 分。何切上下文中的副露、场风、自风、规则、宝牌、本场和立直棒会透传给听牌实算。
 
+未听牌阶段已经支持静态宝牌价值：
+
+- `dora`：候选切牌后仍保留的宝牌按 `doraBonus` 加分。
+- `aka_dora`：赤宝牌按 `akaDoraBonus` 加分；由于当前手牌内部已把 `0m/0p/0s` 规范化为 `5m/5p/5s`，若候选切出普通五，会保守视为可能切掉赤五并减少赤宝牌估值。
+- 宝牌周边：候选切牌后仍保留的宝牌相邻数牌按 `doraSideBonus` 小幅加分，最多计 2 张，避免宝牌周边虚高。
+
 一气通贯和三色同顺按顺子段完成度做静态启发式：完整顺子权重高于两张搭子，至少需要路线覆盖三段或三色且已有明确完成段才给分。全带按幺九相关面子、搭子和对子数量保守加分，并与断幺天然互斥。对对和按刻子和对子结构给分，通常会与七对子形成主次路线关系。
+
+### 一向听二层打点估算
+
+当候选切出后为一向听，且 `useTwoLayerValueForIishanten` 为 true 时，value evaluator 会做一层有限搜索：
+
+```text
+切 X 后 13 张一向听
+  -> 枚举最多 twoLayerMaxDrawTypes 种有效进张 Y
+  -> 对 afterDiscard + Y 做切牌分析
+  -> 只看最多 twoLayerMaxTenpaiDiscards 个转听牌切牌 D
+  -> 对 tenpaiHand + 最终待牌 Z 调用 calculateAgariScore
+  -> 按 Z 的剩余枚数计算听牌平均点数
+  -> 按 Y 的剩余枚数加权，得到候选 X 的平均预估打点
+```
+
+默认预算为：
+
+```text
+twoLayerMaxDrawTypes = 5
+twoLayerMaxTenpaiDiscards = 2
+```
+
+这是为了把二层估算定位为策略信号，而不是完整 EV 搜索。门清手默认按“未来听牌可立直”估值，即 `assumeRiichiForMenzenTwoLayer = true`；副露手不会假设立直。
+
+如果加权平均点数低于 `twoLayerMinAveragePoints`，该路线不计分。否则：
+
+```text
+twoLayerScore = round(averagePoints / twoLayerValueDivisor)
+```
+
+默认 `twoLayerValueDivisor = 160`。例如一向听进张转听牌后的平均打点约 5200 点，会贡献约 33 分。
+
+该分数进入 `value` 分项，而不是覆盖 `ukeire`。因此高打点低进张与低打点高进张的平衡仍由总分决定：
+
+```text
+score =
+  shanten
+  + ukeire
+  + goodShape
+  + shape
+  + value
+  + defense
+```
+
+这种设计保留了速度和打点的张力：进张多的候选仍然通过 `ukeire` 占优，但满贯级转听牌潜力可以通过 `value` 抵消一部分速度劣势。
 
 ### 役牌与断幺冲突
 
@@ -432,10 +518,82 @@ tanyaoRouteScore += breakYakuhaiPairForTanyaoBonus
 
 以下项目等完整局面和规则模块更成熟后再实现：
 
-- 根据完整 `GameState` 自动注入巡目、对手弃牌河、立直状态和副露威胁。
-- 对一向听候选做二层进张后的期望打点枚举。
-- 将防守、点棒状况和排名需求纳入打点权重。
+- 将点棒状况和排名需求纳入打点权重。
 - 纯全带幺九与混全带幺九的细分番型价值。
+
+## 第一版局面策略和防守
+
+当前已经新增初始 `GameState` 决策入口：
+
+```ts
+function chooseAction(state: GameState): ActionDecision
+```
+
+第一版只处理自家摸牌后需要切一张牌的场景。流程是：
+
+```text
+GameState
+  -> 抽取自家手牌、宝牌、场风/自风、巡目、对手状态和 visibleTiles
+  -> analyzeHandText 生成切牌候选
+  -> chooseStrategyMode 判断 attack / balance / defense / push
+  -> evaluateNanikiru 按模式权重评分
+  -> 返回 discard 动作、模式、候选分析和解释
+```
+
+模式切换目前采用保守硬规则：
+
+- 无立直威胁：`attack`。
+- 有立直威胁且自己两向听以上：`defense`。
+- 有立直威胁且自己听牌：`push`。
+- 有立直威胁且自己一向听：`balance`。
+
+不同模式只调整权重，不改变底层牌理计算：
+
+- `defense`：显著提高 `defenseWeight`，降低进张和好形权重。
+- `balance`：提高防守权重，同时保留牌效判断。
+- `push`：保留一定防守惩罚，提高打点权重。
+- `attack`：使用默认何切权重。
+
+### 防守 evaluator
+
+当前防守模块位于：
+
+```text
+src/strategy/evaluators/evaluate-defense.ts
+```
+
+它只在存在威胁对手时生效。威胁对手当前定义为：
+
+- 已立直。
+- 或副露数达到 2 副露以上。
+
+当前支持的安全/危险特征：
+
+- 现物：最高安全度，尤其对立直者。
+- 筋：降低数牌危险度。
+- 壁：相邻牌四枚见时降低相关数牌危险度。
+- 字牌见张：两枚见、三枚见以上逐步提高安全度。
+- 幺九牌：基础危险度低于中张。
+- 宝牌：显著提高危险度。
+- 宝牌周边：小幅提高危险度。
+- 晚巡：提高基础危险度。
+
+防守模块产出 `defense` 和 `risk` reasons，例如：
+
+```text
+- 切 4z 是现物，安全度最高。
+- 5m 是宝牌，对威胁者风险较高。
+- 7p 有筋可依，危险度下降。
+```
+
+当前防守 evaluator 仍是 MVP，不包含：
+
+- 早外侧。
+- 里筋、跨筋、双无筋细分。
+- 副露手染手危险色。
+- 对手手出/摸切序列。
+- 铳点期望。
+- 排名和点差驱动的推进阈值。
 
 ## 第一版 reasons 示例
 
@@ -528,16 +686,20 @@ function renderNanikiruExplanation(result: EvaluatedNanikiruAnalysis): string {
 
 - `analyzeHandText`：通用手牌分析，区分 `3n+1` 和 `3n+2`。
 - `analyzeNanikiru`：何切专用包装，只接受 `3n+2` 闭手牌，并可接收副露和局面上下文。
+- `chooseAction`：`GameState` 决策入口，当前支持自摸后切牌，并按攻守模式调整何切评分权重。
 
 当前已新增：
 
 ```text
 src/strategy/
   reason.ts
+  nanikiru-context.ts
   nanikiru-policy.ts
   evaluate-nanikiru.ts
+  choose-action.ts
   evaluators/
     evaluation.ts
+    evaluate-defense.ts
     evaluate-shape.ts
     evaluate-value.ts
 
@@ -549,9 +711,10 @@ src/explanation/
 
 - `analyzeHandText` 负责基础牌理分析。
 - `evaluateNanikiru` 基于 `analyzeHandText` 的结果进行评分。
-- `NanikiruContext` 承载副露、场风/自风、规则、宝牌和本场等上下文。
+- `NanikiruContext` 承载副露、场风/自风、规则、宝牌、本场、巡目、对手状态和可见牌等上下文。
 - 具体评分特征已拆入 `evaluators/`，避免 `evaluateNanikiru` 继续膨胀。
 - `analyzeNanikiru` 返回评分后的候选、推荐牌、`scoreBreakdown`、`reasons` 和 `explanation`。
+- `chooseAction` 将 `GameState` 转换成何切评分上下文，并输出推荐动作与局面模式。
 - `renderNanikiruExplanation` 只渲染 reasons。
 
 当前 shape evaluator 的基础识别范围包括：
@@ -564,12 +727,21 @@ src/explanation/
 
 ## 实现顺序建议
 
+已完成的基础顺序：
+
 1. 添加 `Reason`、`ScoreBreakdown`、`NanikiruPolicy` 和 `DEFAULT_NANIKIRU_POLICY`。
 2. 实现纯手牌 `evaluateNanikiru`，评分逻辑写在 TypeScript 代码中。
-3. 将权重、奖励分和阈值全部接入 `NanikiruPolicy`，不要散落硬编码常量。
+3. 将权重、奖励分和阈值全部接入 `NanikiruPolicy`。
 4. 将推荐逻辑从 `totalWaits` 排序改为 `score` 排序。
-5. 为候选生成牌效、好型和打点潜力 reasons。
+5. 为候选生成牌效、好型、形状、打点和防守 reasons。
 6. 添加解释渲染函数。
-7. 更新 CLI，让 JSON 中包含 `score`、`scoreBreakdown`、`reasons` 和 `explanation`。
-8. 补测试，测试重点放在结构化分数、配置生效和关键理由，不要过度绑定完整自然语言文本。
-9. 等策略参数稳定后，再考虑添加 `config/policies/*.json` 加载能力。
+7. 新增初始 `GameState -> chooseAction` 决策入口。
+8. 补测试，覆盖结构化分数、配置生效、关键理由和防守现物优先。
+
+后续建议顺序：
+
+1. 扩展防守 evaluator：早外侧、危险筋牌分级、副露染手危险色、手出/摸切信息。
+2. 加入立直判断动作：听牌时评估立直、默听和切牌推进。
+3. 加入副露动作判断：吃、碰、杠的合法性和收益/风险评分。
+4. 加入排名和点差策略：南场、亲家、领先/落后时调整推进阈值。
+5. 等策略参数稳定后，再考虑添加 `config/policies/*.json` 加载能力。

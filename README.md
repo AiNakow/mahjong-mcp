@@ -27,6 +27,12 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - shape/value evaluator 已拆分；shape evaluator 支持基础两面、嵌张、边张、复合形和孤立幺九字牌识别。
 - value evaluator 使用路线评分模型，按主路线全额计分、最佳次路线折扣计分；当前支持役牌、断幺、七对子、染手、一气通贯、三色同顺、全带、对对和以及听牌实算打点路线，并支持断幺与役牌路线冲突衰减。
 - value evaluator 支持“拆役牌对子转断幺”的启发式，在中张延展明显更好的牌形中避免机械保留役牌对子。
+- value evaluator 支持未听牌阶段的宝牌、赤宝牌和宝牌周边静态价值。
+- value evaluator 支持一向听候选的二层打点估算：枚举有效进张后的转听牌候选，再按最终待牌剩余枚数调用计分模块估算平均打点。
+- 速度与打点通过 `ukeire`、`goodShape` 和 `value` 分项共同进入总分，高打点低进张候选可以抵消一部分速度劣势，但不会直接覆盖牌效。
+- 初始 `GameState` 决策入口，支持自摸后切牌推荐，并按 `attack`、`balance`、`defense`、`push` 模式调整策略权重。
+- `decide` CLI 支持轻量参数构造局面，或通过 `--state` 读取完整 `GameState` JSON 文件。
+- 防守 MVP 支持对立直/高副露威胁者评估现物、筋、壁、字牌见张、宝牌和宝牌周边风险。
 - 基础何切解释层，将高优先级 reasons 渲染为中文解释。
 - 和牌分解基础工具，支持一般形、七对子和国士无双，并保留多候选分解。
 - 基础役种/符/点数计算入口，支持立直、两立直、门清自摸、断幺、役牌、平和、七对子、一杯口、二杯口、三色同顺、三色同刻、一气通贯、混全带幺九、纯全带幺九、三暗刻、三杠子、小三元、混老头、对对和、混一色、清一色、国士无双、四暗刻、大三元、小四喜、大四喜、字一色、清老头、绿一色、四杠子、九莲宝灯、天和、地和和宝牌计数。
@@ -41,12 +47,8 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 
 ## 尚未实现
 
-- 基于完整 `GameState` 的动作选择。
-- 完整役种判断。
-- 完整符和点数计算。
-- 宝牌相关的完整打点评估。
-- 完整局面策略评分。
-- 副露、立直、防守和排名判断。
+- 完整 `GameState` 合法动作集合，目前只支持自摸后切牌决策。
+- 完整局面策略评分，目前只有防守 MVP，尚未实现完整副露、立直和排名判断。
 - 截图识别。
 - 自然语言何切题解析。
 - HTTP API。
@@ -58,6 +60,8 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 何切评分和解释生成方案见 [docs/strategy-and-explanation.md](./docs/strategy-and-explanation.md)。
 
 和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
+
+`GameState` 决策 CLI 见 [docs/decide-cli.md](./docs/decide-cli.md)。
 
 ## 环境要求
 
@@ -189,6 +193,15 @@ npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z --ve
 
 服务层默认不返回底层 `raw`。`scoreHand` 默认只返回 `best`，需要全部候选或分解时传入 `verbose`、`includeCandidates`、`includeDecompositions` 或 `includeRaw`。
 
+运行局面决策：
+
+```bash
+npm run decide -- "345m35p13789s1234z" --turn 9 --left-riichi --left-discards 4z6m9p
+npm run decide -- --state examples/decide-state.example.json
+```
+
+`decide` 当前只支持自摸后切牌决策。轻量参数和完整 JSON 字段说明见 [docs/decide-cli.md](./docs/decide-cli.md)。
+
 ## 代码调用示例
 
 ```ts
@@ -198,6 +211,7 @@ import { calculateAgariScore } from "./src/scoring/index.ts";
 import { analyzeHandText } from "./src/service/analyze.ts";
 import { analyzeNanikiru } from "./src/service/nanikiru.ts";
 import { scoreHand } from "./src/service/score-hand.ts";
+import { chooseAction } from "./src/strategy/choose-action.ts";
 
 const byString = analyzeHand("3456m3455p123788s", 0);
 
@@ -222,6 +236,23 @@ const score = calculateAgariScore({
   bakaze: "1z",
   riichi: true,
 });
+const decision = chooseAction({
+  round: { bakaze: "1z", kyoku: 1, honba: 0, riichiSticks: 0, turn: 9 },
+  self: {
+    seatWind: "1z",
+    points: 25000,
+    hand: parseTileGroups("345m35p13789s1234z"),
+    calls: [],
+    discards: [],
+    riichi: false,
+    ippatsu: false,
+    menzen: true,
+  },
+  opponents: [],
+  doraIndicators: [],
+  visibleTiles: Array(34).fill(0),
+  rules: { akaDora: true, kuitan: true, doubleRon: true, countDoubleYakuman: false },
+});
 
 console.log(byString.shanten);
 console.log(byTiles.draws);
@@ -229,6 +260,7 @@ console.log(drawAnalysis.kind);
 console.log(nanikiru.recommendation);
 console.log(scoreByService.best);
 console.log(score.best);
+console.log(decision.action);
 ```
 
 也可以使用更底层的 counts API：
@@ -258,10 +290,13 @@ src/
     paili-cli.ts
   strategy/
     evaluators/
+      evaluate-defense.ts
       evaluate-shape.ts
       evaluate-value.ts
       evaluation.ts
+    choose-action.ts
     evaluate-nanikiru.ts
+    nanikiru-context.ts
     nanikiru-policy.ts
     reason.ts
   explanation/
@@ -277,6 +312,7 @@ src/
   service/
     analyze.ts
     analyze-cli.ts
+    decide-cli.ts
     nanikiru.ts
     nanikiru-cli.ts
     parse-hand.ts
@@ -290,9 +326,12 @@ tests/
   nanikiru.test.ts
   paili.test.ts
 docs/
+  decide-cli.md
   progress.md
   scoring.md
   strategy-and-explanation.md
+examples/
+  decide-state.example.json
 IMPLEMENTATION_PLAN.md
 paili.py
 ```

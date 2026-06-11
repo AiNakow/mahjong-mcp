@@ -88,3 +88,20 @@
 - 扩展 `NanikiruPolicy`，新增 `useScoringForTenpaiValue` 和 `scoringValueDivisor`；更新策略设计文档说明实算打点路线。
 - 收敛 `analyzeNanikiru` 默认输出：默认只返回 `recommendation`、`recommendedCandidate` 和解释，不再返回全量 `candidates`；使用 `verbose` 或 `includeCandidates` 时才返回全量候选。
 - 更新何切服务测试和 README，覆盖默认精简输出与 verbose 全候选输出。
+- 扩展 `NanikiruPolicy`，新增 `defenseWeight`，并扩展 `NanikiruContext` 支持巡目、对手状态、点数和 `visibleTiles`。
+- 新增防守 evaluator `src/strategy/evaluators/evaluate-defense.ts`，第一版支持对立直/高副露威胁者评估现物、筋、壁、字牌见张、宝牌和宝牌周边风险，并产出 `defense` / `risk` reasons。
+- `evaluateNanikiru` 的 `scoreBreakdown` 新增 `defense` 分项；没有对手威胁时防守分为 0，保持纯手牌何切行为不变。
+- 新增 `src/strategy/choose-action.ts`，提供初始 `GameState` 决策入口；第一版支持自家 3n+2 手牌的切牌决策，并按 `attack`、`balance`、`defense`、`push` 模式调整策略权重。
+- 新增 `tests/choose-action.test.ts`，覆盖无威胁时保持进攻何切、对立直两向听时优先现物，以及宝牌对立直风险理由。
+- 更新 README，补充 `GameState` 切牌决策和防守 MVP 当前能力，并修正“尚未实现”边界。
+- 扩展 value evaluator，新增未听牌阶段的宝牌价值路线：保留宝牌、赤宝牌和宝牌周边会进入 `value` 分项；赤宝牌当前按手牌整体数量保守估值，切出五时会视为可能切掉赤五。
+- 新增一向听候选二层打点估算路线 `two_layer_scoring`：对切后一向听候选枚举有限数量的有效进张和转听牌切牌，再对最终待牌调用 `calculateAgariScore`，按剩余枚数加权得到平均预估打点。
+- 扩展 `NanikiruPolicy`，新增 `doraBonus`、`akaDoraBonus`、`doraSideBonus`、`useTwoLayerValueForIishanten`、`twoLayerValueDivisor`、`twoLayerMinAveragePoints`、`twoLayerMaxDrawTypes`、`twoLayerMaxTenpaiDiscards` 和 `assumeRiichiForMenzenTwoLayer`。
+- 二层估算默认预算为最多 5 种进张、每种进张后最多 2 个转听牌切牌，并增加模块级缓存以降低重复测试和重复分析成本。
+- 补充 `tests/evaluate-value.test.ts`，覆盖未听牌宝牌/赤宝牌/宝牌周边价值，以及一向听二层打点 reason 和 `value` 分项。
+- 更新 `docs/strategy-and-explanation.md`，同步宝牌路线、二层打点估算、速度与打点平衡方式和当前预算边界。
+- 新增 `src/service/decide-cli.ts` 和 `npm run decide` 脚本，支持轻量参数构造 `GameState` 并调用 `chooseAction` 输出推荐动作。
+- `decide` CLI 支持相对方向参数：`left` 表示上家、`across` 表示对家、`right` 表示下家；支持各方向的立直、弃牌河、副露、点数和自风。
+- `decide` CLI 支持 `--state` 读取完整 `GameState` JSON 文件；新增 `examples/decide-state.example.json` 作为示例。
+- 新增 `docs/decide-cli.md`，说明轻量参数、完整 JSON 字段、对手方向约定和当前只支持切牌决策的边界。
+- 修正 `buildVisibleTilesFromState`，构造可见牌时会把 `lastDraw` 纳入统计，支持 `--draw` 形式的 13 张闭手 + 自摸牌输入。

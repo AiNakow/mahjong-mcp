@@ -3,6 +3,8 @@ import test from "node:test";
 
 import { DEFAULT_NANIKIRU_POLICY } from "../src/strategy/nanikiru-policy.ts";
 import { evaluateValuePotential } from "../src/strategy/evaluators/evaluate-value.ts";
+import { analyzeHandText } from "../src/service/analyze.ts";
+import { evaluateNanikiru } from "../src/strategy/evaluate-nanikiru.ts";
 
 test("evaluateValuePotential uses primary route plus discounted secondary route", () => {
   const result = evaluateValuePotential([
@@ -150,4 +152,46 @@ test("evaluateValuePotential supports toitoi route", () => {
     || reason.data?.secondaryRoute === "toitoi"
   )));
   assert.ok(result.reasons.some((reason) => reason.data?.tripletCount === 1));
+});
+
+test("evaluateValuePotential rewards dora, aka dora and dora-side tiles before tenpai", () => {
+  const result = evaluateValuePotential([
+    "5m", "6m", "7m",
+    "2p", "3p", "4p",
+    "5s", "6s",
+    "1z", "1z",
+  ], "9p", DEFAULT_NANIKIRU_POLICY, {
+    context: {
+      doraIndicators: ["4m"],
+      akaDoraCount: 1,
+    },
+  });
+
+  assert.ok(result.score >= DEFAULT_NANIKIRU_POLICY.doraBonus);
+  assert.ok(result.reasons.some((reason) => (
+    reason.data?.primaryRoute === "dora"
+    && reason.data?.doraCount === 1
+    && reason.data?.akaDoraCount === 1
+  )));
+});
+
+test("evaluateNanikiru adds two-layer value for iishanten candidates", () => {
+  const analysis = analyzeHandText("3456m3455p123788s");
+  assert.equal(analysis.kind, "discard");
+
+  if (analysis.kind !== "discard") {
+    throw new Error("expected discard analysis");
+  }
+
+  const evaluated = evaluateNanikiru(analysis);
+  const candidate = evaluated.candidates.find((item) => (
+    item.reasons.some((reason) => reason.data?.primaryRoute === "two_layer_scoring")
+  ));
+
+  assert.ok(candidate);
+  assert.ok(candidate.scoreBreakdown.value > 0);
+  assert.ok(candidate.reasons.some((reason) => (
+    reason.type === "value"
+    && String(reason.message).includes("一向听进张转听牌")
+  )));
 });

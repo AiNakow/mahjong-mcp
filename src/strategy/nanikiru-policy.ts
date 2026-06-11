@@ -4,6 +4,7 @@ export interface NanikiruPolicy {
   goodShapeWeight: number;
   shapeWeight: number;
   valueWeight: number;
+  defenseWeight: number;
 
   yakuhaiPairBonus: number;
   tanyaoLeanBonus: number;
@@ -15,6 +16,15 @@ export interface NanikiruPolicy {
   sanshokuBonus: number;
   chantaBonus: number;
   toitoiBonus: number;
+  doraBonus: number;
+  akaDoraBonus: number;
+  doraSideBonus: number;
+  useTwoLayerValueForIishanten: boolean;
+  twoLayerValueDivisor: number;
+  twoLayerMinAveragePoints: number;
+  twoLayerMaxDrawTypes: number;
+  twoLayerMaxTenpaiDiscards: number;
+  assumeRiichiForMenzenTwoLayer: boolean;
   secondaryValueRouteRatio: number;
   yakuhaiTanyaoConflictDecay: number;
   breakYakuhaiPairForTanyaoBonus: number;
@@ -28,6 +38,7 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   goodShapeWeight: 8,
   shapeWeight: 1,
   valueWeight: 1,
+  defenseWeight: 1,
 
   yakuhaiPairBonus: 80,
   tanyaoLeanBonus: 60,
@@ -39,6 +50,15 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   sanshokuBonus: 60,
   chantaBonus: 45,
   toitoiBonus: 55,
+  doraBonus: 90,
+  akaDoraBonus: 70,
+  doraSideBonus: 18,
+  useTwoLayerValueForIishanten: true,
+  twoLayerValueDivisor: 160,
+  twoLayerMinAveragePoints: 1500,
+  twoLayerMaxDrawTypes: 5,
+  twoLayerMaxTenpaiDiscards: 2,
+  assumeRiichiForMenzenTwoLayer: true,
   secondaryValueRouteRatio: 0.35,
   yakuhaiTanyaoConflictDecay: 0.6,
   breakYakuhaiPairForTanyaoBonus: 50,

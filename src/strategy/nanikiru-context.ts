@@ -1,11 +1,26 @@
 import type { RuleConfig } from "../core/rules.ts";
-import type { Call } from "../core/state.ts";
+import type { Counts34 } from "../core/counts.ts";
+import type { Call, Discard } from "../core/state.ts";
 import type { TileId, WindTile } from "../core/tile.ts";
+
+export interface OpponentContext {
+  seatWind?: WindTile;
+  points?: number;
+  calls?: Call[];
+  discards?: Discard[];
+  riichi?: boolean;
+  ippatsu?: boolean;
+  menzen?: boolean;
+}
 
 export interface NanikiruContext {
   calls?: Call[];
   seatWind?: WindTile;
   bakaze?: WindTile;
+  turn?: number;
+  points?: number;
+  opponents?: OpponentContext[];
+  visibleTiles?: Counts34;
   rules?: RuleConfig;
   honba?: number;
   riichiSticks?: number;

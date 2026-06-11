@@ -3,6 +3,7 @@ import type { TileInfo } from "../hand/paili.ts";
 import type { DiscardAnalysis, DiscardCandidate } from "../service/analyze.ts";
 import { evaluateShape } from "./evaluators/evaluate-shape.ts";
 import { evaluateValuePotential } from "./evaluators/evaluate-value.ts";
+import { evaluateDefense } from "./evaluators/evaluate-defense.ts";
 import type { NanikiruPolicy } from "./nanikiru-policy.ts";
 import { DEFAULT_NANIKIRU_POLICY } from "./nanikiru-policy.ts";
 import type { NanikiruContext } from "./nanikiru-context.ts";
@@ -14,6 +15,7 @@ export interface NanikiruScoreBreakdown {
   goodShape: number;
   shape: number;
   value: number;
+  defense: number;
 }
 
 export interface EvaluatedNanikiruCandidate extends DiscardCandidate {
@@ -108,6 +110,7 @@ function evaluateCandidate(
     waits: candidate.waits,
     context,
   });
+  const defenseEvaluation = evaluateDefense(candidate.discard, context);
 
   const scoreBreakdown: NanikiruScoreBreakdown = {
     shanten: shantenScore,
@@ -115,6 +118,7 @@ function evaluateCandidate(
     goodShape: goodShapeScore,
     shape: shapeEvaluation.score * policy.shapeWeight,
     value: valueEvaluation.score * policy.valueWeight,
+    defense: defenseEvaluation.score * policy.defenseWeight,
   };
 
   const score = Object.values(scoreBreakdown).reduce((total, value) => total + value, 0);
@@ -127,6 +131,7 @@ function evaluateCandidate(
       ...reasons,
       ...shapeEvaluation.reasons,
       ...valueEvaluation.reasons,
+      ...defenseEvaluation.reasons,
     ],
   };
 }
