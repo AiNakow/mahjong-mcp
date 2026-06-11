@@ -7,6 +7,7 @@ import { evaluateRouteCoherence } from "./evaluators/evaluate-route.ts";
 import { evaluateDefense } from "./evaluators/evaluate-defense.ts";
 import { buildCandidateFeature } from "./features.ts";
 import { evaluateSameShantenImprovement } from "./improvement.ts";
+import { evaluateRoutePortfolio } from "./routes.ts";
 import type { NanikiruPolicy } from "./nanikiru-policy.ts";
 import { DEFAULT_NANIKIRU_POLICY, normalizeStrategyPolicy } from "./nanikiru-policy.ts";
 import type { NanikiruContext } from "./nanikiru-context.ts";
@@ -77,6 +78,9 @@ function evaluateCandidate(
 ): EvaluatedNanikiruCandidate {
   const afterDiscard = removeOneTile(analysis.hand, candidate.discard);
   const feature = buildCandidateFeature(analysis.hand, afterDiscard, candidate, context);
+  const beforeFeature = buildCandidateFeature(analysis.hand, analysis.hand, candidate, context);
+  const beforeRoutePortfolio = evaluateRoutePortfolio(beforeFeature, policy, context);
+  const routePortfolio = evaluateRoutePortfolio(feature, policy, context);
   const reasons: Reason[] = [];
   const isShantenBack = candidate.shanten > analysis.shanten;
   const improvementOverride = isEarlyLowValueTenpaiImprovement(analysis, candidate, policy, context);
@@ -150,12 +154,16 @@ function evaluateCandidate(
   }
 
   const shapeEvaluation = evaluateShape(afterDiscard, candidate);
-  const routeEvaluation = evaluateRouteCoherence(analysis.hand, afterDiscard, candidate.discard, policy, context);
+  const routeEvaluation = evaluateRouteCoherence(beforeFeature, feature, policy, context, {
+    before: beforeRoutePortfolio,
+    after: routePortfolio,
+  });
   const valueEvaluation = evaluateValuePotential(afterDiscard, candidate.discard, policy, {
     shanten: candidate.shanten,
     waits: candidate.waits,
     context,
     feature,
+    routePortfolio,
   });
   const improvementEvaluation = evaluateSameShantenImprovement(feature, policy, context);
   const defenseEvaluation = evaluateDefense(candidate.discard, context, afterDiscard);

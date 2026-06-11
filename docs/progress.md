@@ -120,3 +120,12 @@
 - 修正宝牌役牌对子场景的路线解释：弱断幺改良不会覆盖高价值役牌对子判断，避免解释中误报“断幺路线”；同时在牌效接近的一向听候选中补充“先处理中张，避免听牌后切危险牌”的比较理由。
 - 扩展 `tests/choose-action.test.ts`，覆盖早巡低价值听牌可退向改良、对手立直时不退向，以及宝牌役牌对子不解释为断幺倾向。
 - 同步更新 `README.md` 和 `docs/strategy-and-explanation.md`，记录早巡低价值听牌退向改良、候选间比较启发式和新增策略参数。
+- 新增策略层可维护性重构文档 `docs/strategy-refactor-plan.md`，明确目标调用链：候选特征、路线组合、改良、评分向量、局况、仲裁和解释。
+- 新增 `src/strategy/features.ts`，集中构建 `CandidateFeature`，统一提供切前/切后手牌、向听、进张、好型率、形状块、宝牌、役牌对子和计数等事实。
+- 新增 `src/strategy/routes.ts`，引入 `RouteModel`、`ROUTE_MODELS` registry 和 `RoutePortfolio`，集中识别宝牌、役牌、断幺、七对子、染手、一气通贯、三色、全带三色、全带和对对和路线，并生成兼容路线组合线和冲突信息。
+- 重构 `evaluate-value.ts`：移除旧的静态路线 fallback，只消费 `RoutePortfolio`、听牌实算打点和一向听二层打点；静态路线新增不再需要修改 value evaluator。
+- 重构 `evaluate-route.ts`：移除重复的役种路线识别，只比较 before/after portfolio，负责路线清晰度、强化、破坏和路线层特殊抑制。
+- 新增 `src/strategy/improvement.ts`，将同向听高质量改良从 value 分项中拆出，独立写入 `scoreBreakdown.improvement`。
+- 新增 `src/strategy/arbitration.ts`，集中候选排序、向听后退压制、候选间进张/打点/防守比较和危险中张/外侧牌 tie-break reasons。
+- 扩展 `NanikiruPolicy`，新增全带三色复合路线、同向听改良参数和 `normalizeStrategyPolicy()`；外部继续兼容 `Partial<NanikiruPolicy>`，内部可读取 `strategy.weights/routes/value/improvement/defense/arbitration` 分组。
+- 新增 `tests/strategy-refactor.test.ts`，覆盖 candidate feature、route portfolio、同向听改良独立计分和 policy 分组兼容；重构后 `npm run check` 与 `npm test` 均通过，当前测试总数为 98 个。

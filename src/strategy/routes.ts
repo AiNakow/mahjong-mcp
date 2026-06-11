@@ -35,6 +35,11 @@ export interface RouteEvaluation {
   data?: Record<string, unknown>;
 }
 
+export interface RouteModel {
+  id: RouteId;
+  evaluate(feature: CandidateFeature, context: NanikiruContext, policy: NanikiruPolicy): RouteEvaluation | undefined;
+}
+
 export interface RouteLine {
   ids: RouteId[];
   expectedHan: number;
@@ -57,18 +62,9 @@ export function evaluateRoutePortfolio(
   policy: NanikiruPolicy,
   context: NanikiruContext = {},
 ): RoutePortfolio {
-  const routes = [
-    evaluateDoraRoute(feature, policy),
-    evaluateYakuhaiRoute(feature, policy, context),
-    evaluateTanyaoRoute(feature, policy, context),
-    evaluateChiitoiRoute(feature, policy),
-    evaluateHonitsuRoute(feature, policy),
-    evaluateIttsuRoute(feature, policy),
-    evaluateSanshokuRoute(feature, policy),
-    evaluateChantaSanshokuRoute(feature, policy),
-    evaluateChantaRoute(feature, policy),
-    evaluateToitoiRoute(feature, policy),
-  ].filter((route): route is RouteEvaluation => route !== undefined && route.value > 0)
+  const routes = ROUTE_MODELS
+    .map((model) => model.evaluate(feature, context, policy))
+    .filter((route): route is RouteEvaluation => route !== undefined && route.value > 0)
     .sort((a, b) => b.value - a.value);
 
   const lines = buildRouteLines(routes, feature);
@@ -79,6 +75,19 @@ export function evaluateRoutePortfolio(
     conflicts: buildRouteConflicts(routes),
   };
 }
+
+export const ROUTE_MODELS: readonly RouteModel[] = [
+  { id: "dora", evaluate: (feature, _context, policy) => evaluateDoraRoute(feature, policy) },
+  { id: "yakuhai", evaluate: (feature, context, policy) => evaluateYakuhaiRoute(feature, policy, context) },
+  { id: "tanyao", evaluate: (feature, context, policy) => evaluateTanyaoRoute(feature, policy, context) },
+  { id: "chiitoi", evaluate: (feature, _context, policy) => evaluateChiitoiRoute(feature, policy) },
+  { id: "honitsu", evaluate: (feature, _context, policy) => evaluateHonitsuRoute(feature, policy) },
+  { id: "ittsu", evaluate: (feature, _context, policy) => evaluateIttsuRoute(feature, policy) },
+  { id: "sanshoku", evaluate: (feature, _context, policy) => evaluateSanshokuRoute(feature, policy) },
+  { id: "chanta_sanshoku", evaluate: (feature, _context, policy) => evaluateChantaSanshokuRoute(feature, policy) },
+  { id: "chanta", evaluate: (feature, _context, policy) => evaluateChantaRoute(feature, policy) },
+  { id: "toitoi", evaluate: (feature, _context, policy) => evaluateToitoiRoute(feature, policy) },
+];
 
 function evaluateDoraRoute(feature: CandidateFeature, policy: NanikiruPolicy): RouteEvaluation | undefined {
   const doraCount = feature.tiles.doraCount;
@@ -140,7 +149,9 @@ function evaluateYakuhaiRoute(
     flexibility: 0.2,
     requiredTiles: yakuhaiPairs,
     conflictTags: tanyaoStrength >= 0.7 ? ["tanyao"] : [],
-    synergyTags: ["open"],
+    synergyTags: yakuhaiPairs.some((tile) => feature.tiles.doraTiles.includes(tile))
+      ? ["open", "dora"]
+      : ["open"],
     reasons: [{
       type: "value",
       polarity: "positive",

@@ -2,9 +2,33 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DEFAULT_NANIKIRU_POLICY } from "../src/strategy/nanikiru-policy.ts";
-import { evaluateValuePotential } from "../src/strategy/evaluators/evaluate-value.ts";
+import { evaluateValuePotential as evaluateValuePotentialRaw } from "../src/strategy/evaluators/evaluate-value.ts";
 import { analyzeHandText } from "../src/service/analyze.ts";
 import { evaluateNanikiru } from "../src/strategy/evaluate-nanikiru.ts";
+import { buildCandidateFeature } from "../src/strategy/features.ts";
+import type { TileId } from "../src/core/tile.ts";
+import type { NanikiruContext } from "../src/strategy/nanikiru-context.ts";
+
+function evaluateValuePotential(
+  afterDiscard: TileId[],
+  discard: TileId,
+  policy = DEFAULT_NANIKIRU_POLICY,
+  options: { shanten?: number; context?: NanikiruContext } = {},
+) {
+  const feature = buildCandidateFeature([...afterDiscard, discard], afterDiscard, {
+    discard,
+    shanten: options.shanten ?? 1,
+    waits: [],
+    totalWaits: 0,
+    goodShapeCount: 0,
+    goodShapeDraws: [],
+  }, options.context);
+
+  return evaluateValuePotentialRaw(afterDiscard, discard, policy, {
+    ...options,
+    feature,
+  });
+}
 
 test("evaluateValuePotential uses primary route plus discounted secondary route", () => {
   const result = evaluateValuePotential([

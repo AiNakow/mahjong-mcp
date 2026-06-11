@@ -197,7 +197,7 @@ interface ScoreVector {
 }
 ```
 
-当前为了兼容外部输出，仍折叠成现有 `NanikiruScoreBreakdown`。后续可以将 `scoreBreakdown` 扩展为包含 `improvement`，或保持 `improvement` 并入 `value`，但内部不应混淆两者来源。
+当前为了兼容外部输出，仍折叠成现有 `NanikiruScoreBreakdown`。`scoreBreakdown` 已扩展为包含 `improvement`，内部不再把同向听改良混入静态 `value` 来源。
 
 `DecisionArbitrator` 负责最终排序：
 
@@ -224,7 +224,7 @@ interface StrategyPolicy {
 }
 ```
 
-迁移期可以保留旧字段，同时新增 helper 将旧 policy 规范化为分组 policy。这样不会一次性破坏现有测试和调用方。
+当前保留旧字段作为外部兼容接口，并通过 `normalizeStrategyPolicy()` 将旧 policy 规范化为分组 policy。这样不会破坏现有 `Partial<NanikiruPolicy>` 调用方。
 
 ## 测试策略
 
@@ -247,19 +247,21 @@ choose-action.test.ts
 
 ## 迁移步骤
 
-1. 新增 `CandidateFeatureExtractor`，现有 evaluator 可先通过 adapter 使用。
-2. 新增 `RoutePortfolio`，先覆盖七对子、三色、全带、全带三色、宝牌和一气通贯。
-3. 将 value evaluator 的路线判断替换为 portfolio 输出。
-4. 将同向听改良迁移到 `ImprovementEvaluator`。
-5. 新增 `DecisionArbitrator`，把候选排序、退向压制和 tie-break 集中。
-6. 将 policy 逐步分组，不改变外部 `Partial<NanikiruPolicy>` 调用方式。
-7. 扩展测试矩阵，锁定策略层边界。
+1. 已新增 `CandidateFeatureExtractor`，主评估链先构建统一 feature。
+2. 已新增 `RouteModel` registry 和 `RoutePortfolio`，覆盖七对子、三色、全带、全带三色、宝牌和一气通贯等当前路线。
+3. 已将 value evaluator 的静态路线判断替换为 portfolio 输出，旧 fallback 已移除。
+4. 已将同向听改良迁移到 `ImprovementEvaluator`。
+5. 已新增 `DecisionArbitrator`，把候选排序、退向压制和 tie-break 集中。
+6. 已新增 policy 分组 helper，不改变外部 `Partial<NanikiruPolicy>` 调用方式。
+7. 已扩展测试矩阵，锁定策略层边界。
 
 ## 当前实现状态
 
 - 已新增 `CandidateFeature` 构建入口，主评估链通过统一 feature 向 shape、value、route 和 improvement 传递候选事实。
-- 已新增 `RoutePortfolio`，覆盖宝牌、役牌、断幺、七对子、染手、一气通贯、三色、全带三色、全带和对对和，并开始生成兼容路线组合线。
-- `evaluate-value` 在主链上使用 portfolio 输出，静态路线判断不再在主评估路径重复扫描手牌。
+- 已新增 `RouteModel` 与 `ROUTE_MODELS` registry，覆盖宝牌、役牌、断幺、七对子、染手、一气通贯、三色、全带三色、全带和对对和。
+- 已新增 `RoutePortfolio`，通过 registry 生成候选路线、兼容路线组合线和冲突信息。
+- `evaluate-value` 只消费 portfolio 输出，旧的静态路线 fallback 已移除。
+- `evaluate-route` 只消费 before/after portfolio，负责路线清晰度、路线破坏和少量路线层特殊抑制，不再重复识别具体役种路线。
 - 同向听改良已迁移到 `ImprovementEvaluator`，并在 `scoreBreakdown.improvement` 中独立计分。
 - 候选排序、退向压制和最终 tie-break 已集中到 `DecisionArbitrator`。
 - 已新增 `normalizeStrategyPolicy`，在保持旧字段和 `Partial<NanikiruPolicy>` 兼容的同时暴露 `strategy.weights/routes/value/improvement/defense/arbitration` 分组。

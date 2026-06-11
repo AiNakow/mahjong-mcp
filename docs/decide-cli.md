@@ -60,6 +60,33 @@ npm run decide -- --state examples/decide-state.example.json
 
 解释中的“理由”只展示支持推荐动作的非负面理由；风险和代价类负面理由会单独出现在“注意”中。
 
+## 内部评分结构
+
+`decide` 的切牌分析复用何切策略层。当前主链路为：
+
+```text
+analyze hand
+  -> build CandidateFeature
+  -> evaluate RoutePortfolio
+  -> evaluate shape / route / value / improvement / defense
+  -> apply placement policy
+  -> arbitrate final order
+  -> render explanation
+```
+
+候选的 `scoreBreakdown` 包含：
+
+- `shanten`
+- `ukeire`
+- `goodShape`
+- `shape`
+- `route`
+- `value`
+- `improvement`
+- `defense`
+
+静态役种路线统一由 `ROUTE_MODELS` registry 识别，并通过 `RoutePortfolio` 提供给 value 和 route evaluator。候选排序、向听后退压制和候选间比较理由集中在 `DecisionArbitrator`。
+
 ## 轻量参数
 
 位置参数：

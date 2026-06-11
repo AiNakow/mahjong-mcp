@@ -59,6 +59,7 @@ type ReasonType =
   | "ukeire"
   | "good_shape"
   | "shape"
+  | "route"
   | "value"
   | "highPoints"
   | "defense"
@@ -104,7 +105,9 @@ type EvaluatedNanikiruCandidate = {
     ukeire: number;
     goodShape: number;
     shape: number;
+    route: number;
     value: number;
+    improvement: number;
     defense: number;
   };
   reasons: Reason[];
@@ -123,7 +126,9 @@ score =
   + ukeireScore
   + goodShapeScore
   + shapeScore
+  + routeScore
   + valueScore
+  + improvementScore
   + defenseScore
 ```
 
@@ -135,6 +140,7 @@ const DEFAULT_NANIKIRU_POLICY = {
   ukeireWeight: 10,
   goodShapeWeight: 8,
   shapeWeight: 1,
+  routeWeight: 1,
   valueWeight: 1,
   defenseWeight: 1,
 };
@@ -146,7 +152,9 @@ const DEFAULT_NANIKIRU_POLICY = {
 - `ukeireScore`：总进张数。
 - `goodShapeScore`：好型相关进张数量。
 - `shapeScore`：形状保留，例如两面、复合形、对子结构。
-- `valueScore`：打点潜力，例如断幺、役牌、七对子、染手。
+- `routeScore`：路线清晰度和路线破坏惩罚，只比较 before/after route portfolio。
+- `valueScore`：打点潜力，消费 route portfolio、听牌实算打点和一向听二层打点。
+- `improvementScore`：同向听改良等独立改良价值，不混入静态打点。
 - `defenseScore`：安全度和危险度。无对手威胁信息时为 0。
 
 当前 `paili` 只返回最佳向听候选，所以 `shantenScore` 在第一阶段差异不大。但保留该字段有利于后续扩展到全候选评价。
@@ -178,6 +186,7 @@ type NanikiruPolicy = {
   ukeireWeight: number;
   goodShapeWeight: number;
   shapeWeight: number;
+  routeWeight: number;
   valueWeight: number;
   defenseWeight: number;
 
@@ -194,6 +203,7 @@ type NanikiruPolicy = {
   doraBonus: number;
   akaDoraBonus: number;
   doraSideBonus: number;
+  compositeRouteBonus: number;
   useTwoLayerValueForIishanten: boolean;
   twoLayerValueDivisor: number;
   twoLayerMinAveragePoints: number;
@@ -205,6 +215,9 @@ type NanikiruPolicy = {
   breakYakuhaiPairForTanyaoBonus: number;
   useScoringForTenpaiValue: boolean;
   scoringValueDivisor: number;
+  sameShantenImprovementValueDivisor: number;
+  sameShantenImprovementMinValue: number;
+  sameShantenImprovementMaxDrawTypes: number;
   shantenBackUkeireMultiplier: number;
   shantenBackGoodShapeMultiplier: number;
   shantenBackDefenseOverrideDelta: number;
@@ -226,6 +239,7 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   ukeireWeight: 10,
   goodShapeWeight: 8,
   shapeWeight: 1,
+  routeWeight: 1,
   valueWeight: 1,
   defenseWeight: 1,
 
@@ -242,6 +256,7 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   doraBonus: 90,
   akaDoraBonus: 70,
   doraSideBonus: 18,
+  compositeRouteBonus: 160,
   useTwoLayerValueForIishanten: true,
   twoLayerValueDivisor: 160,
   twoLayerMinAveragePoints: 1500,
@@ -253,6 +268,9 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   breakYakuhaiPairForTanyaoBonus: 50,
   useScoringForTenpaiValue: true,
   scoringValueDivisor: 100,
+  sameShantenImprovementValueDivisor: 120,
+  sameShantenImprovementMinValue: 15,
+  sameShantenImprovementMaxDrawTypes: 8,
   shantenBackUkeireMultiplier: 0.35,
   shantenBackGoodShapeMultiplier: 0.25,
   shantenBackDefenseOverrideDelta: 300,
@@ -265,6 +283,21 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   shantenBackImprovementGoodShapeMultiplier: 0.7,
 };
 ```
+
+当前代码保留旧的平铺字段作为外部兼容接口，同时提供 `normalizeStrategyPolicy()` 暴露分组后的策略对象：
+
+```ts
+interface StrategyPolicy {
+  weights: WeightPolicy;
+  routes: RoutePolicy;
+  value: ValuePolicy;
+  improvement: ImprovementPolicy;
+  defense: DefensePolicy;
+  arbitration: ArbitrationPolicy;
+}
+```
+
+后续新增策略参数应优先归入对应分组，再按兼容需要映射到旧字段。
 
 评分模块读取配置：
 
@@ -360,9 +393,15 @@ config/policies/defensive.json
 
 这比完整规则引擎更容易调试、测试和维护。
 
-## 第一版打点潜力
+## 打点潜力与路线
 
-第一版不做完整役种判断，只做静态启发式。建议先支持：
+当前打点潜力由三类来源组合：
+
+- `RoutePortfolio` 中的静态役种/宝牌路线。
+- 听牌候选的实算最高和牌点。
+- 一向听候选的二层转听牌平均打点估算。
+
+静态路线仍是启发式，不等同于完整役种成立判断。当前支持：
 
 ### 役牌对子
 
@@ -406,9 +445,24 @@ config/policies/defensive.json
 同一花色较集中，有染手潜力。
 ```
 
-### 路线评分模型
+### 路线模型与 RoutePortfolio
 
-打点潜力不要把所有路线简单累加。当前设计采用：
+路线识别集中在 `src/strategy/routes.ts`，每条路线实现统一的 `RouteModel` 形态，并注册到 `ROUTE_MODELS`：
+
+```ts
+interface RouteModel {
+  id: RouteId;
+  evaluate(feature: CandidateFeature, context: NanikiruContext, policy: NanikiruPolicy): RouteEvaluation | undefined;
+}
+```
+
+主评估链会先为每个候选构建 `CandidateFeature`，再生成 `RoutePortfolio`。后续模块只消费 portfolio：
+
+- `evaluate-value.ts`：把 portfolio 中的路线转换为打点潜力，并叠加听牌实算和一向听二层打点。
+- `evaluate-route.ts`：比较 before/after portfolio，评价路线清晰度、路线强化和路线破坏。
+- `improvement.ts`：可读取 portfolio 中的复合路线信号，评估同向听改良。
+
+打点潜力不要把所有路线简单累加。当前 value evaluator 对 portfolio 中的路线采用：
 
 ```text
 valueScore = primaryRoute.score + secondaryRoute.score * secondaryValueRouteRatio
@@ -425,18 +479,21 @@ valueScore = primaryRoute.score + secondaryRoute.score * secondaryValueRouteRati
 当前路线包括：
 
 ```text
+dora: 宝牌、赤宝牌和宝牌周边
 yakuhai: 役牌路线
 tanyao: 断幺路线
 chiitoi: 七对子路线
 honitsu: 染手路线
-dora: 宝牌、赤宝牌和宝牌周边
 ittsu: 一气通贯路线
 sanshoku: 三色同顺路线
+chanta_sanshoku: 全带三色复合路线
 chanta: 全带路线
 toitoi: 对对和路线
 scoring: 听牌实算打点
 two_layer_scoring: 一向听进张转听牌后的二层打点估算
 ```
+
+其中 `scoring` 和 `two_layer_scoring` 是 value evaluator 的动态打点路线，不属于静态 `ROUTE_MODELS`。静态路线新增时应优先新增模型并注册到 `ROUTE_MODELS`，而不是在 value、route、shape 和 arbitration 中重复写判断。
 
 当候选切出后已经听牌，且 `useScoringForTenpaiValue` 为 true 时，value evaluator 会枚举该候选的待牌，调用 `calculateAgariScore` 估算最高和牌点数，并按 `scoringValueDivisor` 折算为打点路线分。默认 `scoringValueDivisor` 为 `100`，例如最高和牌点数 5200 点会贡献约 52 分。何切上下文中的副露、场风、自风、规则、宝牌、本场和立直棒会透传给听牌实算。
 
@@ -487,7 +544,9 @@ score =
   + ukeire
   + goodShape
   + shape
+  + route
   + value
+  + improvement
   + defense
 ```
 
@@ -537,7 +596,14 @@ tanyaoRouteScore += breakYakuhaiPairForTanyaoBonus
 
 例如 `34678m34p77755s66z` 这类牌，拆 `66z` 后保留的主要是中张和顺子延展，当前评分会优先认可断幺路线，而不是机械保留役牌对子。
 
-### 早巡低价值听牌退向改良
+### 同向听和退向改良
+
+改良逻辑已从 value evaluator 中拆出到 `src/strategy/improvement.ts`。当前主要覆盖两类：
+
+- 同向听改良：向听数不变，但摸入后能改善宝牌、路线或转听牌价值。
+- 早巡低价值听牌退向改良：低价值窄听在安全早巡可退向一向听追求宝牌和好型。
+
+同向听改良只在早巡、无主动威胁，且存在宝牌或明确复合路线信号时启用，并受 `sameShantenImprovement*` 策略参数控制。该分数进入 `scoreBreakdown.improvement`。
 
 通常情况下，何切排序会把向听后退候选压在不退向候选之后。当前实现只在很窄的条件下放开这个限制：
 
@@ -925,6 +991,10 @@ function renderNanikiruExplanation(result: EvaluatedNanikiruAnalysis): string {
 ```text
 src/strategy/
   reason.ts
+  arbitration.ts
+  features.ts
+  routes.ts
+  improvement.ts
   high-value.ts
   placement.ts
   nanikiru-context.ts
@@ -934,6 +1004,7 @@ src/strategy/
   evaluators/
     evaluation.ts
     evaluate-defense.ts
+    evaluate-route.ts
     evaluate-shape.ts
     evaluate-value.ts
 
@@ -946,7 +1017,11 @@ src/explanation/
 - `analyzeHandText` 负责基础牌理分析。
 - `evaluateNanikiru` 基于 `analyzeHandText` 的结果进行评分。
 - `NanikiruContext` 承载副露、场风/自风、规则、宝牌、本场、巡目、对手状态和可见牌等上下文。
-- 具体评分特征已拆入 `evaluators/`，避免 `evaluateNanikiru` 继续膨胀。
+- `features.ts` 负责候选统一特征快照。
+- `routes.ts` 负责 `RouteModel` registry 和 `RoutePortfolio`。
+- `improvement.ts` 负责同向听和退向改良评估。
+- `evaluators/` 只处理各自评分职责，避免 `evaluateNanikiru` 继续膨胀。
+- `arbitration.ts` 负责候选排序、向听后退压制和候选间比较理由。
 - `analyzeNanikiru` 返回评分后的候选、推荐牌、`scoreBreakdown`、`reasons` 和 `explanation`。
 - `chooseAction` 将 `GameState` 转换成何切评分上下文，并输出推荐动作与局面模式。
 - `renderNanikiruExplanation` 只渲染 reasons。
@@ -971,6 +1046,7 @@ src/explanation/
 6. 添加解释渲染函数。
 7. 新增初始 `GameState -> chooseAction` 决策入口。
 8. 补测试，覆盖结构化分数、配置生效、关键理由和防守现物优先。
+9. 完成策略层可维护性重构：新增 `CandidateFeature`、`RouteModel` registry、`RoutePortfolio`、`ImprovementEvaluator` 和 `DecisionArbitrator`，并移除 value/route evaluator 中重复的静态路线识别。
 
 后续建议顺序：
 

@@ -24,11 +24,12 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - 最小何切服务层，支持从纯手牌字符串或 `手牌: ...` 文本中提取手牌并输出统一分析结构。
 - 基础何切评分层，按 `score` 推荐切牌，并返回 `scoreBreakdown` 和 `reasons`。
 - 何切服务支持副露、场风/自风、宝牌和规则上下文输入；副露牌和宝牌指示牌会从剩余枚数中扣除。
-- shape/value evaluator 已拆分；shape evaluator 支持基础两面、嵌张、边张、复合形和孤立幺九字牌识别。
-- value evaluator 使用路线评分模型，按主路线全额计分、最佳次路线折扣计分；当前支持役牌、断幺、七对子、染手、一气通贯、三色同顺、全带、对对和以及听牌实算打点路线，并支持断幺与役牌路线冲突衰减。
-- value evaluator 支持“拆役牌对子转断幺”的启发式，在中张延展明显更好的牌形中避免机械保留役牌对子。
-- value evaluator 支持未听牌阶段的宝牌、赤宝牌和宝牌周边静态价值。
-- value evaluator 支持一向听候选的二层打点估算：枚举有效进张后的转听牌候选，再按最终待牌剩余枚数调用计分模块估算平均打点。
+- 策略层已拆分为候选特征、路线组合、改良、形状、打点、防守、局况和仲裁模块；主评估链先构建 `CandidateFeature`，再生成 `RoutePortfolio`。
+- 路线模型通过 `ROUTE_MODELS` registry 集中注册；当前支持宝牌、役牌、断幺、七对子、染手、一气通贯、三色同顺、全带三色、全带和对对和。
+- value evaluator 只消费 `RoutePortfolio` 与实算/二层打点结果，不再重复识别静态役种路线；route evaluator 只比较 before/after portfolio 的路线清晰度和破坏程度。
+- Improvement evaluator 独立评估同向听改良，结果进入 `scoreBreakdown.improvement`，不再混入静态打点分。
+- shape evaluator 支持基础两面、嵌张、边张、复合形和孤立幺九字牌识别。
+- value evaluator 支持听牌实算打点、一向听二层打点估算，以及宝牌/赤宝牌/宝牌周边价值。
 - 速度与打点通过 `ukeire`、`goodShape` 和 `value` 分项共同进入总分，高打点低进张候选可以抵消一部分速度劣势，但不会直接覆盖牌效。
 - 早巡低价值窄听可以退向一向听做高质量改良：无主动威胁时，若当前听牌待牌少且无宝牌价值，候选能保留宝牌进张和好型改良，会按改良路线折算向听、进张和好型分。
 - 初始 `GameState` 决策入口，支持自摸后切牌推荐，并按 `attack`、`balance`、`defense`、`push` 模式调整策略权重；面对立直时，高打点一向听会进入 `push`。
@@ -60,6 +61,8 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 完整路线见 [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)。
 
 何切评分和解释生成方案见 [docs/strategy-and-explanation.md](./docs/strategy-and-explanation.md)。
+
+策略层可维护性重构状态见 [docs/strategy-refactor-plan.md](./docs/strategy-refactor-plan.md)。
 
 和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
 
@@ -150,7 +153,7 @@ npm run nanikiru -- "234m456p778s22z" --call pon:555z --seat 2z --round 1z --dor
 - `calls` / `context`：本次何切使用的副露和局面上下文。
 - `candidates`：全量候选切牌。默认不返回，使用 `verbose` 或 `--verbose` 时返回。候选自身带有 `shanten` 表示切出后的向听数。
 - `score`：候选总评分。
-- `scoreBreakdown`：向听、进张、好形、形状、打点潜力和防守分项。
+- `scoreBreakdown`：向听、进张、好形、形状、路线、打点潜力、改良和防守分项。
 - `reasons`：结构化推荐理由，包含正面、负面和中性理由。
 - `explanation`：由高优先级正面 reasons 渲染出的中文解释；负面 reasons 会单独显示在“注意”。
 
@@ -318,16 +321,21 @@ src/
   strategy/
     evaluators/
       evaluate-defense.ts
+      evaluate-route.ts
       evaluate-shape.ts
       evaluate-value.ts
       evaluation.ts
+    arbitration.ts
     choose-action.ts
     evaluate-nanikiru.ts
+    features.ts
     high-value.ts
+    improvement.ts
     placement.ts
     nanikiru-context.ts
     nanikiru-policy.ts
     reason.ts
+    routes.ts
   explanation/
     render-nanikiru.ts
   scoring/
@@ -349,16 +357,19 @@ src/
     score-hand-cli.ts
 tests/
   analyze.test.ts
-    evaluate-nanikiru.test.ts
-    evaluate-shape.test.ts
-    evaluate-value.test.ts
+  choose-action.test.ts
+  evaluate-nanikiru.test.ts
+  evaluate-shape.test.ts
+  evaluate-value.test.ts
   nanikiru.test.ts
   paili.test.ts
+  strategy-refactor.test.ts
 docs/
   decide-cli.md
   progress.md
   scoring.md
   strategy-and-explanation.md
+  strategy-refactor-plan.md
   南四避四与流局听牌策略方案.md
 examples/
   decide-state.example.json
