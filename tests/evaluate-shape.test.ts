@@ -48,7 +48,7 @@ test("evaluateShape emits shape reasons and score", () => {
   ], candidate);
 
   assert.ok(result.score > 0);
-  assert.ok(result.reasons.some((reason) => reason.message.includes("两面搭子")));
+  assert.ok(result.reasons.some((reason) => reason.message.includes("两面延展")));
   assert.ok(result.reasons.some((reason) => reason.message.includes("复合形")));
   assert.ok(result.reasons.some((reason) => reason.message.includes("孤立幺九字牌")));
 });

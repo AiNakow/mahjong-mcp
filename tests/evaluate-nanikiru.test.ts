@@ -4,6 +4,7 @@ import test from "node:test";
 import { renderNanikiruExplanation } from "../src/explanation/render-nanikiru.ts";
 import { analyzeHandText } from "../src/service/analyze.ts";
 import { evaluateNanikiru } from "../src/strategy/evaluate-nanikiru.ts";
+import { DEFAULT_NANIKIRU_POLICY } from "../src/strategy/nanikiru-policy.ts";
 
 test("evaluateNanikiru adds score breakdown and reasons", () => {
   const analysis = analyzeHandText("3456m3455p123788s");
@@ -44,22 +45,10 @@ test("evaluateNanikiru policy changes candidate ordering", () => {
   }
 
   const evaluated = evaluateNanikiru(analysis, {
-    shantenWeight: 1000,
+    ...DEFAULT_NANIKIRU_POLICY,
     ukeireWeight: 1,
     goodShapeWeight: 100,
-    shapeWeight: 1,
-    valueWeight: 1,
-    yakuhaiPairBonus: 80,
-    tanyaoLeanBonus: 60,
-    chiitoiPairThreshold: 4,
-    chiitoiBonus: 50,
-    honitsuSuitThreshold: 8,
-    honitsuBonus: 80,
-    secondaryValueRouteRatio: 0.35,
-    yakuhaiTanyaoConflictDecay: 0.6,
-    breakYakuhaiPairForTanyaoBonus: 50,
     useScoringForTenpaiValue: false,
-    scoringValueDivisor: 100,
   });
 
   assert.equal(evaluated.recommendation, "1s");
@@ -107,6 +96,31 @@ test("evaluateNanikiru uses scoring route for tenpai candidates", () => {
     reason.type === "value"
     && String(reason.message).includes("最高和牌点数")
   )));
+});
+
+test("evaluateNanikiru explains value route difference against the runner-up", () => {
+  const analysis = analyzeHandText("2345m23456789s23p");
+  assert.equal(analysis.kind, "discard");
+
+  if (analysis.kind !== "discard") {
+    throw new Error("expected discard analysis");
+  }
+
+  const evaluated = evaluateNanikiru(analysis);
+  const best = evaluated.candidates[0];
+  const second = evaluated.candidates[1];
+
+  assert.equal(best.discard, "5m");
+  assert.equal(second.discard, "2m");
+  assert.ok(best.reasons.some((reason) => (
+    reason.type === "value"
+    && String(reason.message).includes("三色同顺")
+    && reason.data?.secondDiscard === "2m"
+  )));
+
+  const explanation = renderNanikiruExplanation(evaluated);
+  assert.match(explanation, /兼顾三色同顺/);
+  assert.doesNotMatch(explanation, /9 组两面搭子/);
 });
 
 test("renderNanikiruExplanation renders high-priority reasons", () => {

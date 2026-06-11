@@ -11,6 +11,10 @@ export interface NanikiruPolicy {
   chiitoiBonus: number;
   honitsuSuitThreshold: number;
   honitsuBonus: number;
+  ittsuBonus: number;
+  sanshokuBonus: number;
+  chantaBonus: number;
+  toitoiBonus: number;
   secondaryValueRouteRatio: number;
   yakuhaiTanyaoConflictDecay: number;
   breakYakuhaiPairForTanyaoBonus: number;
@@ -31,6 +35,10 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   chiitoiBonus: 50,
   honitsuSuitThreshold: 8,
   honitsuBonus: 80,
+  ittsuBonus: 65,
+  sanshokuBonus: 60,
+  chantaBonus: 45,
+  toitoiBonus: 55,
   secondaryValueRouteRatio: 0.35,
   yakuhaiTanyaoConflictDecay: 0.6,
   breakYakuhaiPairForTanyaoBonus: 50,

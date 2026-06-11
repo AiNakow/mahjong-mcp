@@ -27,7 +27,7 @@ test("scoreHand scores a structured ron request", () => {
 
 test("scoreHand supports honba, riichi sticks and dora indicators", () => {
   const result = scoreHand({
-    text: "123m456m789p234s22z",
+    text: "123m406m789p234s22z",
     winningTile: "4s",
     method: "ron",
     seatWind: "3z",
@@ -36,7 +36,6 @@ test("scoreHand supports honba, riichi sticks and dora indicators", () => {
     honba: 1,
     riichiSticks: 1,
     doraIndicators: ["1z"],
-    akaDoraCount: 1,
     uraDoraIndicators: ["1s"],
   });
 
@@ -46,6 +45,20 @@ test("scoreHand supports honba, riichi sticks and dora indicators", () => {
   assert.equal(result.best?.han, 6);
   assert.equal(result.best?.points.ron, 12300);
   assert.equal(result.best?.points.total, 13300);
+});
+
+test("scoreHand derives aka dora count from red five notation", () => {
+  const result = scoreHand({
+    text: "123m406m789p234s22z",
+    winningTile: "4s",
+    method: "ron",
+    seatWind: "3z",
+    bakaze: "1z",
+    riichi: true,
+  });
+
+  assert.equal(result.status, "scored");
+  assert.ok(result.best?.yaku.some((item) => item.id === "aka_dora" && item.han === 1));
 });
 
 test("scoreHand exposes no-yaku status", () => {

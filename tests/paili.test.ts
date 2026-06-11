@@ -8,6 +8,7 @@ import {
 } from "../src/core/counts.ts";
 import {
   parseTileGroups,
+  parseTileGroupsWithRed,
   TILES_34,
 } from "../src/core/tile.ts";
 import {
@@ -26,6 +27,14 @@ test("parseTileGroups parses compact tile strings", () => {
     "7s", "8s", "9s",
     "1z", "2z", "3z",
   ]);
+});
+
+test("parseTileGroupsWithRed normalizes red fives and counts aka dora", () => {
+  const parsed = parseTileGroupsWithRed("120m405p0s");
+
+  assert.deepEqual(parsed.tiles, ["1m", "2m", "5m", "4p", "5p", "5p", "5s"]);
+  assert.equal(parsed.akaDoraCount, 3);
+  assert.equal(isValidHandstr("120m405p0s"), true);
 });
 
 test("Counts34 conversion round-trips tiles", () => {

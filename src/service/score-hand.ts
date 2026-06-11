@@ -1,5 +1,5 @@
 import type { TileId, WindTile } from "../core/tile.ts";
-import { parseTileGroups, parseTileId } from "../core/tile.ts";
+import { parseTileGroupsWithRed, parseTileId } from "../core/tile.ts";
 import { DEFAULT_RULE_CONFIG, type RuleConfig } from "../core/rules.ts";
 import type { Call } from "../core/state.ts";
 import {
@@ -60,8 +60,11 @@ export interface ScoreHandResult {
 export function scoreHand(input: ScoreHandInput): ScoreHandResult {
   const handText = parseHandText(input.text);
   let hand: TileId[];
+  let parsedAkaDoraCount = 0;
   try {
-    hand = parseTileGroups(handText);
+    const parsed = parseTileGroupsWithRed(handText);
+    hand = parsed.tiles;
+    parsedAkaDoraCount = parsed.akaDoraCount;
   } catch {
     throw new HandTextParseError(input.text);
   }
@@ -87,7 +90,7 @@ export function scoreHand(input: ScoreHandInput): ScoreHandResult {
     riichiSticks: input.riichiSticks,
     doraIndicators: input.doraIndicators,
     uraDoraIndicators: input.uraDoraIndicators,
-    akaDoraCount: input.akaDoraCount,
+    akaDoraCount: parsedAkaDoraCount + (input.akaDoraCount ?? 0),
   };
   const raw = calculateAgariScore(context);
 

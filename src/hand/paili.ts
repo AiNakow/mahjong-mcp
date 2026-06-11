@@ -48,6 +48,7 @@ type BlockState = readonly [melds: number, taatsu: number, pairs: number];
 
 export interface AnalyzeOptions {
   includeShantenBack?: boolean;
+  unavailableTiles?: readonly TileId[];
 }
 
 export class MahjongHandError extends Error {
@@ -59,6 +60,7 @@ export class MahjongHandError extends Error {
 
 const YAO_JIU_INDICES = [0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33];
 const BLOCK_CACHE = new Map<string, ReadonlyArray<BlockState>>();
+const EMPTY_COUNTS_34 = Array(34).fill(0) as readonly number[];
 
 export function isValidHandstr(handStr: string): boolean {
   const normalized = handStr.trim();
@@ -66,7 +68,7 @@ export function isValidHandstr(handStr: string): boolean {
     return false;
   }
 
-  if (!/^(\d+[mps]|[1-7]+z)+$/.test(normalized)) {
+  if (!/^([0-9]+[mps]|[1-7]+z)+$/.test(normalized)) {
     return false;
   }
 
@@ -301,6 +303,7 @@ export function getDraws(
   shanten: number,
   mode: ShantenMode,
   shantenCache?: Map<string, number>,
+  unavailableCount: readonly number[] = EMPTY_COUNTS_34,
 ): TileInfo[] {
   const draws: TileInfo[] = [];
   for (let i = 0; i < handCount.length; i += 1) {
@@ -315,12 +318,12 @@ export function getDraws(
     if (newShanten < shanten) {
       draws.push({
         id: TILES_34[i],
-        remaining: 4 - handCount[i],
+        remaining: Math.max(0, 4 - handCount[i] - unavailableCount[i]),
       });
     }
   }
 
-  return draws;
+  return draws.filter((draw) => draw.remaining > 0);
 }
 
 export function hasMoreWaitsThan(
@@ -329,6 +332,7 @@ export function hasMoreWaitsThan(
   mode: ShantenMode,
   limit: number,
   shantenCache?: Map<string, number>,
+  unavailableCount: readonly number[] = EMPTY_COUNTS_34,
 ): boolean {
   let totalWaits = 0;
   for (let i = 0; i < handCount.length; i += 1) {
@@ -341,7 +345,7 @@ export function hasMoreWaitsThan(
     handCount[i] -= 1;
 
     if (newShanten < shanten) {
-      totalWaits += 4 - handCount[i];
+      totalWaits += Math.max(0, 4 - handCount[i] - unavailableCount[i]);
       if (totalWaits > limit) {
         return true;
       }
@@ -357,6 +361,7 @@ export function getGoodShapeCount(
   shanten: number,
   mode: ShantenMode,
   shantenCache?: Map<string, number>,
+  unavailableCount: readonly number[] = EMPTY_COUNTS_34,
 ): [count: number, draws: TileId[]] {
   let goodShapeCount = 0;
   const goodShapeDraws: TileId[] = [];
@@ -371,7 +376,7 @@ export function getGoodShapeCount(
       }
 
       handCount[i] -= 1;
-      const hasGoodWaits = hasMoreWaitsThan(handCount, shanten - 1, mode, 4, shantenCache);
+      const hasGoodWaits = hasMoreWaitsThan(handCount, shanten - 1, mode, 4, shantenCache, unavailableCount);
       handCount[i] += 1;
 
       if (hasGoodWaits) {
@@ -419,6 +424,9 @@ export function analyzeCounts(
   const shantenCache = new Map<string, number>();
   const analysisResult = createEmptyAnalysisResult();
   const handCount = [...handCountInput] as Counts34;
+  const unavailableCount = options.unavailableTiles
+    ? tilesToCounts34(options.unavailableTiles)
+    : EMPTY_COUNTS_34;
   const tileCount = countTiles(handCount);
   if (hand.length !== tileCount) {
     throw new Error(`Hand tile list length ${hand.length} does not match Counts34 total ${tileCount}`);
@@ -430,7 +438,7 @@ export function analyzeCounts(
   if (tileCount % 3 === 1) {
     analysisResult.kind = "draw";
     analysisResult.shanten = analyzeDraws(handCount, mode, shantenCache);
-    analysisResult.draws = getDraws(handCount, analysisResult.shanten, mode, shantenCache);
+    analysisResult.draws = getDraws(handCount, analysisResult.shanten, mode, shantenCache, unavailableCount);
     analysisResult.is_tenpai = analysisResult.shanten <= 0;
     analysisResult.total_draws = sum(analysisResult.draws.map((draw) => draw.remaining));
 
@@ -441,6 +449,7 @@ export function analyzeCounts(
         analysisResult.shanten,
         mode,
         shantenCache,
+        unavailableCount,
       );
       analysisResult.good_shape_count = goodShapeCount;
       analysisResult.good_shape_draws = goodShapeDraws;
@@ -484,7 +493,7 @@ export function analyzeCounts(
       };
 
       handCount[i] -= 1;
-      discardInfo.waits = getDraws(handCount, discardShanten, mode, shantenCache);
+      discardInfo.waits = getDraws(handCount, discardShanten, mode, shantenCache, unavailableCount);
       handCount[i] += 1;
 
       const selfDrawWait = discardInfo.waits.find((wait) => wait.id === TILES_34[i]);
@@ -508,6 +517,7 @@ export function analyzeCounts(
           discard.shanten,
           mode,
           shantenCache,
+          unavailableCount,
         );
         discard.good_shape_count = goodShapeCount;
         discard.good_shape_draws = goodShapeDraws;

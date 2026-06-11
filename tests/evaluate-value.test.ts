@@ -30,6 +30,43 @@ test("evaluateValuePotential can select yakuhai as primary route when tanyao is 
   assert.ok(result.reasons.some((reason) => reason.data?.primaryRoute === "yakuhai"));
 });
 
+test("evaluateValuePotential treats seat and round wind pairs as yakuhai", () => {
+  const result = evaluateValuePotential([
+    "1m", "9m", "2p", "3p", "4p",
+    "1z", "1z",
+    "7z",
+  ], "3s", DEFAULT_NANIKIRU_POLICY, {
+    context: {
+      seatWind: "1z",
+    },
+  });
+
+  assert.equal(result.score, 80);
+  assert.ok(result.reasons.some((reason) => (
+    reason.data?.primaryRoute === "yakuhai"
+    || String(reason.message).includes("役牌对子 1z")
+  )));
+});
+
+test("evaluateValuePotential disables open tanyao route when kuitan is off", () => {
+  const result = evaluateValuePotential([
+    "2m", "4m", "6m", "8m",
+    "2p", "4p", "6p", "8p",
+  ], "1z", DEFAULT_NANIKIRU_POLICY, {
+    context: {
+      calls: [{ type: "chi", tiles: ["2s", "3s", "4s"], calledTile: "3s" }],
+      rules: {
+        akaDora: true,
+        kuitan: false,
+        doubleRon: true,
+        countDoubleYakuman: false,
+      },
+    },
+  });
+
+  assert.equal(result.score, 0);
+});
+
 test("evaluateValuePotential supports honitsu as secondary route", () => {
   const result = evaluateValuePotential([
     "1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m",
@@ -56,4 +93,61 @@ test("evaluateValuePotential rewards breaking yakuhai pair for tanyao route", ()
     String(reason.message).includes("拆役牌对子")
     && reason.data?.breakingYakuhaiPair === true
   )));
+});
+
+test("evaluateValuePotential supports ittsu route", () => {
+  const result = evaluateValuePotential([
+    "1m", "2m", "3m",
+    "4m", "5m", "6m",
+    "7m", "8m",
+    "2p", "3p", "4p",
+  ], "9p", DEFAULT_NANIKIRU_POLICY);
+
+  assert.ok(result.score > 0);
+  assert.ok(result.reasons.some((reason) => reason.data?.primaryRoute === "ittsu"));
+  assert.ok(result.reasons.some((reason) => reason.data?.suit === "m"));
+});
+
+test("evaluateValuePotential supports sanshoku route", () => {
+  const result = evaluateValuePotential([
+    "2m", "3m", "4m",
+    "2p", "3p", "4p",
+    "2s", "3s",
+    "7m", "8m", "9m",
+  ], "1z", DEFAULT_NANIKIRU_POLICY);
+
+  assert.ok(result.score > 0);
+  assert.ok(result.reasons.some((reason) => reason.data?.primaryRoute === "sanshoku"));
+  assert.ok(result.reasons.some((reason) => reason.data?.sequence === "234"));
+});
+
+test("evaluateValuePotential supports chanta route", () => {
+  const result = evaluateValuePotential([
+    "1m", "2m", "3m",
+    "7p", "8p", "9p",
+    "1s", "9s",
+    "1z", "1z",
+    "2z",
+  ], "4m", DEFAULT_NANIKIRU_POLICY);
+
+  assert.ok(result.score > 0);
+  assert.ok(result.reasons.some((reason) => reason.data?.primaryRoute === "chanta"));
+  assert.ok(result.reasons.some((reason) => Number(reason.data?.chantaBlockCount) >= 3));
+});
+
+test("evaluateValuePotential supports toitoi route", () => {
+  const result = evaluateValuePotential([
+    "2m", "2m", "2m",
+    "5p", "5p",
+    "8s", "8s",
+    "3z", "3z",
+    "7m", "8m", "9m",
+  ], "1p", DEFAULT_NANIKIRU_POLICY);
+
+  assert.ok(result.score > 0);
+  assert.ok(result.reasons.some((reason) => (
+    reason.data?.primaryRoute === "toitoi"
+    || reason.data?.secondaryRoute === "toitoi"
+  )));
+  assert.ok(result.reasons.some((reason) => reason.data?.tripletCount === 1));
 });

@@ -82,7 +82,9 @@
 - 新增计分上下文校验模块 `src/scoring/validation.ts`，支持返回 `warnings`；严重错误会使计分结果进入 `invalid_context` 状态。
 - 当前 `invalid_context` 覆盖：副露立直、立直与两立直同时声明、无立直一发、天和/地和条件错误、海底/河底冲突、岭上/抢杠冲突。
 - 扩展宝牌模型：`AgariContext` 新增 `akaDoraCount` 和 `uraDoraIndicators`；役种输出会拆分 `dora`、`aka_dora`、`ura_dora`，且里宝牌只在立直/两立直时计入。
-- `score` CLI 新增 `--aka` 和 `--ura` 参数；规则禁用赤宝牌或未立直传入里宝牌时会返回 warning 并忽略对应翻数。
+- `score` CLI 支持 `--ura` 参数；赤宝牌改为通过手牌或副露中的 `0m/0p/0s` 解析，规则禁用赤宝牌或未立直传入里宝牌时会返回 warning 并忽略对应翻数。
 - 新增 `tests/scoring-golden.test.ts`，覆盖代表性荣和、自摸、满贯以上和役满点数。
 - 何切 value evaluator 新增听牌实算打点路线：候选切出后听牌时枚举待牌调用 `calculateAgariScore`，按 `scoringValueDivisor` 折算为打点潜力分。
 - 扩展 `NanikiruPolicy`，新增 `useScoringForTenpaiValue` 和 `scoringValueDivisor`；更新策略设计文档说明实算打点路线。
+- 收敛 `analyzeNanikiru` 默认输出：默认只返回 `recommendation`、`recommendedCandidate` 和解释，不再返回全量 `candidates`；使用 `verbose` 或 `includeCandidates` 时才返回全量候选。
+- 更新何切服务测试和 README，覆盖默认精简输出与 verbose 全候选输出。

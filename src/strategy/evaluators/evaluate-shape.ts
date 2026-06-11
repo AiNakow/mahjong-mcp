@@ -44,7 +44,7 @@ export function evaluateShape(
       type: "shape",
       polarity: "positive",
       priority: 68,
-      message: `保留 ${shapeFeatures.ryanmen} 组两面搭子，听牌质量较好。`,
+      message: formatRyanmenMessage(shapeFeatures.ryanmen),
       data: { ryanmen: shapeFeatures.ryanmen },
     });
   }
@@ -91,6 +91,13 @@ export interface ShapeFeatures {
   penchan: number;
   complex: number;
   isolatedTerminalOrHonor: number;
+}
+
+function formatRyanmenMessage(ryanmen: number): string {
+  if (ryanmen >= 5) {
+    return "保留多处两面延展，听牌质量较好。";
+  }
+  return `保留 ${ryanmen} 处两面延展，听牌质量较好。`;
 }
 
 export function extractShapeFeatures(tiles: readonly TileId[], discard?: TileId): ShapeFeatures {

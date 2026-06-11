@@ -22,6 +22,22 @@ test("analyzeHandText returns draw analysis for 3n+1 hands", () => {
   }
 });
 
+test("analyzeHandText subtracts unavailable tiles from draw remaining counts", () => {
+  const result = analyzeHandText({
+    text: "23m456p789s11z",
+    unavailableTiles: ["1m", "1m"],
+  });
+
+  assert.equal(result.kind, "draw");
+  if (result.kind !== "draw") {
+    throw new Error("expected draw analysis");
+  }
+
+  assert.equal(result.draws.find((draw) => draw.id === "1m")?.remaining, 2);
+  assert.equal(result.draws.find((draw) => draw.id === "4m")?.remaining, 4);
+  assert.equal(result.totalDraws, 6);
+});
+
 test("analyzeHandText still returns discard analysis for 3n+2 hands", () => {
   const result = analyzeHandText("3456m3455p123788s");
 

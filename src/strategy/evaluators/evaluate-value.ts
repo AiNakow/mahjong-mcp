@@ -1,10 +1,20 @@
 import type { TileId } from "../../core/tile.ts";
 import { calculateAgariScore } from "../../scoring/index.ts";
 import type { NanikiruPolicy } from "../nanikiru-policy.ts";
+import { isOpenHand, type NanikiruContext } from "../nanikiru-context.ts";
 import type { EvaluationPart } from "./evaluation.ts";
 import type { TileInfo } from "../../hand/paili.ts";
 
-export type ValueRoute = "scoring" | "yakuhai" | "tanyao" | "chiitoi" | "honitsu";
+export type ValueRoute =
+  | "scoring"
+  | "yakuhai"
+  | "tanyao"
+  | "chiitoi"
+  | "honitsu"
+  | "ittsu"
+  | "sanshoku"
+  | "chanta"
+  | "toitoi";
 
 interface ValueRouteScore {
   route: ValueRoute;
@@ -17,14 +27,19 @@ export function evaluateValuePotential(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
-  context: { shanten?: number; waits?: readonly TileInfo[] } = {},
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext } = {},
 ): EvaluationPart {
+  const nanikiruContext = context.context ?? {};
   const routeScores = [
     evaluateTenpaiScoringRoute(afterDiscard, discard, policy, context),
-    evaluateYakuhaiRoute(afterDiscard, discard, policy),
-    evaluateTanyaoRoute(afterDiscard, discard, policy),
+    evaluateYakuhaiRoute(afterDiscard, discard, policy, nanikiruContext),
+    evaluateTanyaoRoute(afterDiscard, discard, policy, nanikiruContext),
     evaluateChiitoiRoute(afterDiscard, discard, policy),
     evaluateHonitsuRoute(afterDiscard, discard, policy),
+    evaluateIttsuRoute(afterDiscard, discard, policy),
+    evaluateSanshokuRoute(afterDiscard, discard, policy),
+    evaluateChantaRoute(afterDiscard, discard, policy),
+    evaluateToitoiRoute(afterDiscard, discard, policy),
   ].filter((route) => route.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -72,7 +87,7 @@ function evaluateTenpaiScoringRoute(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
-  context: { shanten?: number; waits?: readonly TileInfo[] },
+  context: { shanten?: number; waits?: readonly TileInfo[]; context?: NanikiruContext },
 ): ValueRouteScore {
   if (!policy.useScoringForTenpaiValue || context.shanten !== 0 || !context.waits || context.waits.length === 0) {
     return { route: "scoring", score: 0, reasons: [] };
@@ -85,6 +100,15 @@ function evaluateTenpaiScoringRoute(
       hand: [...afterDiscard, wait.id],
       winningTile: wait.id,
       method: "ron",
+      calls: context.context?.calls,
+      seatWind: context.context?.seatWind,
+      bakaze: context.context?.bakaze,
+      rules: context.context?.rules,
+      honba: context.context?.honba,
+      riichiSticks: context.context?.riichiSticks,
+      doraIndicators: context.context?.doraIndicators,
+      uraDoraIndicators: context.context?.uraDoraIndicators,
+      akaDoraCount: context.context?.akaDoraCount,
     });
     if (result.best && result.best.points.total > bestTotal) {
       bestTotal = result.best.points.total;
@@ -114,8 +138,9 @@ function evaluateYakuhaiRoute(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
+  context: NanikiruContext,
 ): ValueRouteScore {
-  const yakuhaiPairs = getYakuhaiPairs(afterDiscard);
+  const yakuhaiPairs = getYakuhaiPairs(afterDiscard, context);
   if (yakuhaiPairs.length === 0) {
     return { route: "yakuhai", score: 0, reasons: [] };
   }
@@ -145,9 +170,13 @@ function evaluateTanyaoRoute(
   afterDiscard: readonly TileId[],
   discard: TileId,
   policy: NanikiruPolicy,
+  context: NanikiruContext,
 ): ValueRouteScore {
   const tanyaoStrength = getTanyaoStrength(afterDiscard);
   if (tanyaoStrength <= 0) {
+    return { route: "tanyao", score: 0, reasons: [] };
+  }
+  if (isOpenHand(context) && context.rules?.kuitan === false) {
     return { route: "tanyao", score: 0, reasons: [] };
   }
 
@@ -230,14 +259,157 @@ function evaluateHonitsuRoute(
   };
 }
 
+function evaluateIttsuRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+): ValueRouteScore {
+  let best: { suit: "m" | "p" | "s"; score: number; complete: number; partial: number } | undefined;
+  for (const suit of ["m", "p", "s"] as const) {
+    const blocks = [
+      getSequenceBlockStrength(afterDiscard, suit, 1),
+      getSequenceBlockStrength(afterDiscard, suit, 4),
+      getSequenceBlockStrength(afterDiscard, suit, 7),
+    ];
+    const complete = blocks.filter((block) => block === 2).length;
+    const partial = blocks.filter((block) => block === 1).length;
+    const raw = complete * 2 + partial;
+
+    if (complete >= 1 && complete + partial >= 3 && raw >= 4 && (!best || raw > best.score)) {
+      best = { suit, score: raw, complete, partial };
+    }
+  }
+
+  if (!best) {
+    return { route: "ittsu", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(policy.ittsuBonus * Math.min(1, best.score / 6));
+  return {
+    route: "ittsu",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: 54,
+      message: `${formatSuit(best.suit)}的一气通贯路线较清晰。`,
+      data: { discard, suit: best.suit, completeBlocks: best.complete, partialBlocks: best.partial },
+    }],
+  };
+}
+
+function evaluateSanshokuRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+): ValueRouteScore {
+  let best: { start: number; score: number; complete: number; partial: number } | undefined;
+  for (let start = 1; start <= 7; start += 1) {
+    const blocks = (["m", "p", "s"] as const).map((suit) => getSequenceBlockStrength(afterDiscard, suit, start));
+    const complete = blocks.filter((block) => block === 2).length;
+    const partial = blocks.filter((block) => block === 1).length;
+    const raw = complete * 2 + partial;
+
+    if (complete >= 1 && complete + partial >= 3 && raw >= 4 && (!best || raw > best.score)) {
+      best = { start, score: raw, complete, partial };
+    }
+  }
+
+  if (!best) {
+    return { route: "sanshoku", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(policy.sanshokuBonus * Math.min(1, best.score / 6));
+  return {
+    route: "sanshoku",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: 53,
+      message: `${best.start}${best.start + 1}${best.start + 2} 的三色同顺路线较清晰。`,
+      data: {
+        discard,
+        sequence: `${best.start}${best.start + 1}${best.start + 2}`,
+        completeBlocks: best.complete,
+        partialBlocks: best.partial,
+      },
+    }],
+  };
+}
+
+function evaluateChantaRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+): ValueRouteScore {
+  const terminalHonorCount = afterDiscard.filter(isTerminalOrHonor).length;
+  if (terminalHonorCount < 5 || getTanyaoStrength(afterDiscard) > 0) {
+    return { route: "chanta", score: 0, reasons: [] };
+  }
+
+  const chantaBlockCount = countChantaBlocks(afterDiscard);
+  if (chantaBlockCount < 3) {
+    return { route: "chanta", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(policy.chantaBonus * Math.min(1, chantaBlockCount / 5));
+  return {
+    route: "chanta",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: 50,
+      message: "幺九相关面子和搭子较多，有全带路线潜力。",
+      data: { discard, terminalHonorCount, chantaBlockCount },
+    }],
+  };
+}
+
+function evaluateToitoiRoute(
+  afterDiscard: readonly TileId[],
+  discard: TileId,
+  policy: NanikiruPolicy,
+): ValueRouteScore {
+  const counts = countTileIds(afterDiscard);
+  const pairCount = [...counts.values()].filter((count) => count >= 2).length;
+  const tripletCount = [...counts.values()].filter((count) => count >= 3).length;
+  const blockScore = tripletCount * 2 + Math.max(0, pairCount - tripletCount);
+
+  if (tripletCount === 0 || pairCount < 3 || blockScore < 4) {
+    return { route: "toitoi", score: 0, reasons: [] };
+  }
+
+  const score = Math.round(policy.toitoiBonus * Math.min(1, blockScore / 6));
+  return {
+    route: "toitoi",
+    score,
+    reasons: [{
+      type: "value",
+      polarity: "positive",
+      priority: 52,
+      message: "对子和刻子较多，有对对和路线潜力。",
+      data: { discard, pairCount, tripletCount, blockScore },
+    }],
+  };
+}
+
 function countPairs(tiles: readonly TileId[]): number {
   const counts = countTileIds(tiles);
   return [...counts.values()].filter((count) => count >= 2).length;
 }
 
-function getYakuhaiPairs(tiles: readonly TileId[]): TileId[] {
+function getYakuhaiPairs(tiles: readonly TileId[], context: NanikiruContext): TileId[] {
   const counts = countTileIds(tiles);
-  return (["5z", "6z", "7z"] as const).filter((tile) => (counts.get(tile) ?? 0) >= 2);
+  const yakuhaiTiles = new Set<TileId>(["5z", "6z", "7z"]);
+  if (context.bakaze) {
+    yakuhaiTiles.add(context.bakaze);
+  }
+  if (context.seatWind) {
+    yakuhaiTiles.add(context.seatWind);
+  }
+  return [...yakuhaiTiles].filter((tile) => (counts.get(tile) ?? 0) >= 2);
 }
 
 function getTanyaoStrength(tiles: readonly TileId[]): number {
@@ -298,6 +470,43 @@ function getHonitsuLeanSuit(tiles: readonly TileId[], threshold: number): "m" | 
   return undefined;
 }
 
+function getSequenceBlockStrength(tiles: readonly TileId[], suit: "m" | "p" | "s", start: number): 0 | 1 | 2 {
+  const counts = countTileIds(tiles);
+  const first = `${start}${suit}` as TileId;
+  const second = `${start + 1}${suit}` as TileId;
+  const third = `${start + 2}${suit}` as TileId;
+  const hasFirst = (counts.get(first) ?? 0) > 0;
+  const hasSecond = (counts.get(second) ?? 0) > 0;
+  const hasThird = (counts.get(third) ?? 0) > 0;
+
+  if (hasFirst && hasSecond && hasThird) {
+    return 2;
+  }
+  if ((hasFirst && hasSecond) || (hasSecond && hasThird) || (hasFirst && hasThird)) {
+    return 1;
+  }
+  return 0;
+}
+
+function countChantaBlocks(tiles: readonly TileId[]): number {
+  const counts = countTileIds(tiles);
+  let blocks = 0;
+
+  for (const [tile, count] of counts) {
+    if (count >= 2 && isTerminalOrHonor(tile)) {
+      blocks += 1;
+    }
+  }
+
+  for (const suit of ["m", "p", "s"] as const) {
+    for (const start of [1, 7]) {
+      blocks += getSequenceBlockStrength(tiles, suit, start);
+    }
+  }
+
+  return blocks;
+}
+
 function countTileIds(tiles: readonly TileId[]): Map<TileId, number> {
   const counts = new Map<TileId, number>();
   for (const tile of tiles) {
@@ -333,5 +542,17 @@ function formatRoute(route: ValueRoute): string {
   if (route === "chiitoi") {
     return "七对子路线";
   }
-  return "染手路线";
+  if (route === "honitsu") {
+    return "染手路线";
+  }
+  if (route === "ittsu") {
+    return "一气通贯路线";
+  }
+  if (route === "sanshoku") {
+    return "三色同顺路线";
+  }
+  if (route === "chanta") {
+    return "全带路线";
+  }
+  return "对对和路线";
 }

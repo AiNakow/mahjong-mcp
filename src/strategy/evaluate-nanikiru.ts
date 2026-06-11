@@ -5,6 +5,7 @@ import { evaluateShape } from "./evaluators/evaluate-shape.ts";
 import { evaluateValuePotential } from "./evaluators/evaluate-value.ts";
 import type { NanikiruPolicy } from "./nanikiru-policy.ts";
 import { DEFAULT_NANIKIRU_POLICY } from "./nanikiru-policy.ts";
+import type { NanikiruContext } from "./nanikiru-context.ts";
 import type { Reason } from "./reason.ts";
 
 export interface NanikiruScoreBreakdown {
@@ -37,9 +38,10 @@ export interface EvaluatedNanikiruAnalysis {
 export function evaluateNanikiru(
   analysis: DiscardAnalysis,
   policy: NanikiruPolicy = DEFAULT_NANIKIRU_POLICY,
+  context: NanikiruContext = {},
 ): EvaluatedNanikiruAnalysis {
   const evaluated = analysis.candidates
-    .map((candidate) => evaluateCandidate(analysis, candidate, policy))
+    .map((candidate) => evaluateCandidate(analysis, candidate, policy, context))
     .sort((a, b) => b.score - a.score || b.totalWaits - a.totalWaits);
 
   addComparativeReasons(evaluated);
@@ -62,6 +64,7 @@ function evaluateCandidate(
   analysis: DiscardAnalysis,
   candidate: DiscardCandidate,
   policy: NanikiruPolicy,
+  context: NanikiruContext,
 ): EvaluatedNanikiruCandidate {
   const afterDiscard = removeOneTile(analysis.hand, candidate.discard);
   const reasons: Reason[] = [];
@@ -103,6 +106,7 @@ function evaluateCandidate(
   const valueEvaluation = evaluateValuePotential(afterDiscard, candidate.discard, policy, {
     shanten: candidate.shanten,
     waits: candidate.waits,
+    context,
   });
 
   const scoreBreakdown: NanikiruScoreBreakdown = {
@@ -148,6 +152,94 @@ function addComparativeReasons(candidates: EvaluatedNanikiruCandidate[]): void {
       },
     });
   }
+
+  const bestValueRoute = getValueRouteSummary(best);
+  const secondValueRoute = getValueRouteSummary(second);
+  const valueDelta = best.scoreBreakdown.value - second.scoreBreakdown.value;
+  if (
+    valueDelta > 0
+    && bestValueRoute
+    && secondValueRoute
+    && bestValueRoute.key !== secondValueRoute.key
+  ) {
+    best.reasons.push({
+      type: "value",
+      polarity: "positive",
+      priority: 86,
+      message: `相比切 ${second.discard}，切 ${best.discard} ${formatRouteSummary(bestValueRoute)}，打点路线更好。`,
+      data: {
+        discard: best.discard,
+        secondDiscard: second.discard,
+        valueDelta,
+        primaryRoute: bestValueRoute.primary,
+        secondaryRoute: bestValueRoute.secondary,
+        secondPrimaryRoute: secondValueRoute.primary,
+        secondSecondaryRoute: secondValueRoute.secondary,
+      },
+    });
+  }
+}
+
+interface ValueRouteSummary {
+  key: string;
+  primary: string;
+  secondary?: string;
+}
+
+function getValueRouteSummary(candidate: EvaluatedNanikiruCandidate): ValueRouteSummary | undefined {
+  const summaryReason = candidate.reasons.find((reason) => (
+    reason.type === "value"
+    && typeof reason.data?.primaryRoute === "string"
+  ));
+  const primary = summaryReason?.data?.primaryRoute;
+  const secondary = summaryReason?.data?.secondaryRoute;
+  if (typeof primary !== "string") {
+    return undefined;
+  }
+
+  return {
+    key: `${primary}:${typeof secondary === "string" ? secondary : ""}`,
+    primary,
+    secondary: typeof secondary === "string" ? secondary : undefined,
+  };
+}
+
+function formatRouteSummary(summary: ValueRouteSummary): string {
+  if (!summary.secondary) {
+    return `以${formatRouteName(summary.primary)}为主要路线`;
+  }
+  return `以${formatRouteName(summary.primary)}为主，并兼顾${formatRouteName(summary.secondary)}`;
+}
+
+function formatRouteName(route: string): string {
+  if (route === "scoring") {
+    return "实算打点";
+  }
+  if (route === "yakuhai") {
+    return "役牌";
+  }
+  if (route === "tanyao") {
+    return "断幺";
+  }
+  if (route === "chiitoi") {
+    return "七对子";
+  }
+  if (route === "honitsu") {
+    return "染手";
+  }
+  if (route === "ittsu") {
+    return "一气通贯";
+  }
+  if (route === "sanshoku") {
+    return "三色同顺";
+  }
+  if (route === "chanta") {
+    return "全带";
+  }
+  if (route === "toitoi") {
+    return "对对和";
+  }
+  return route;
 }
 
 function removeOneTile(tiles: readonly TileId[], tile: TileId): TileId[] {

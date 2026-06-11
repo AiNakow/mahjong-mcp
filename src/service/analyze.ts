@@ -14,6 +14,7 @@ export interface HandAnalysisInput {
   includeShantenBack?: boolean;
   includeRaw?: boolean;
   verbose?: boolean;
+  unavailableTiles?: readonly TileId[];
 }
 
 export interface DrawAnalysis {
@@ -65,7 +66,10 @@ export function analyzeHandText(input: string | HandAnalysisInput, mode: Shanten
 
   let raw: AnalysisResult;
   try {
-    raw = analyzeHand(handText, requestMode, { includeShantenBack });
+    raw = analyzeHand(handText, requestMode, {
+      includeShantenBack,
+      unavailableTiles: request.unavailableTiles,
+    });
   } catch (error) {
     if (error instanceof MahjongHandError) {
       throw new HandTextParseError(request.text);

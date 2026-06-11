@@ -23,15 +23,16 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
   - `3n+2` 手牌：分析所有可切牌候选和推荐切牌，包括向听后退候选。
 - 最小何切服务层，支持从纯手牌字符串或 `手牌: ...` 文本中提取手牌并输出统一分析结构。
 - 基础何切评分层，按 `score` 推荐切牌，并返回 `scoreBreakdown` 和 `reasons`。
+- 何切服务支持副露、场风/自风、宝牌和规则上下文输入；副露牌和宝牌指示牌会从剩余枚数中扣除。
 - shape/value evaluator 已拆分；shape evaluator 支持基础两面、嵌张、边张、复合形和孤立幺九字牌识别。
-- value evaluator 使用路线评分模型，按主路线全额计分、最佳次路线折扣计分，并支持断幺与役牌路线冲突衰减。
+- value evaluator 使用路线评分模型，按主路线全额计分、最佳次路线折扣计分；当前支持役牌、断幺、七对子、染手、一气通贯、三色同顺、全带、对对和以及听牌实算打点路线，并支持断幺与役牌路线冲突衰减。
 - value evaluator 支持“拆役牌对子转断幺”的启发式，在中张延展明显更好的牌形中避免机械保留役牌对子。
 - 基础何切解释层，将高优先级 reasons 渲染为中文解释。
 - 和牌分解基础工具，支持一般形、七对子和国士无双，并保留多候选分解。
 - 基础役种/符/点数计算入口，支持立直、两立直、门清自摸、断幺、役牌、平和、七对子、一杯口、二杯口、三色同顺、三色同刻、一气通贯、混全带幺九、纯全带幺九、三暗刻、三杠子、小三元、混老头、对对和、混一色、清一色、国士无双、四暗刻、大三元、小四喜、大四喜、字一色、清老头、绿一色、四杠子、九莲宝灯、天和、地和和宝牌计数。
 - 双倍役满支持规则开关，默认不计双倍役满。
 - 计分上下文会返回 `warnings`，并用 `invalid_context` 标记无法计分的矛盾输入。
-- 支持普通宝牌、赤宝牌数量和里宝牌指示牌计翻；宝牌不作为起和役。
+- 支持普通宝牌、赤宝牌和里宝牌指示牌计翻；宝牌不作为起和役。赤宝牌用 `0m/0p/0s` 表示，并会规范化为对应的 `5m/5p/5s` 参与牌理。
 - 计分服务层和 CLI，支持结构化传入和牌牌、荣和/自摸、自风、场风、立直、本场、立直棒和宝牌指示牌。
 - 计分服务支持结构化副露输入；暗杠不破门清，吃/碰/明杠/加杠会按开门处理，食断由 `kuitan` 控制。
 - 计分结果会用 `status` 区分未和牌、和牌但无役、正常计分；默认输出精简结果，使用 `verbose`/`--verbose` 时返回全部候选、分解和底层 raw。
@@ -109,15 +110,37 @@ npm run analyze -- "123m456p789s1z" 0 --verbose
 ```bash
 npm run nanikiru -- "3456m3455p123788s"
 npm run nanikiru -- "手牌: 3456m 3455p 123788s"
-npm run nanikiru -- "手牌: 3456m 3455p 123788s" 0 --verbose
+npm run nanikiru -- "手牌: 3456m 3455p 123788s" --mode 0 --verbose
+npm run nanikiru -- "234m456p778s22z" --call pon:555z --seat 2z --round 1z --dora 1m --verbose
 ```
 
-`nanikiru` 只用于 `3n+2` 的“需要切一张牌”场景。若输入 `3n+1` 手牌，应使用 `npm run analyze` 查看进张和听牌状态。
+`nanikiru` 只用于 `3n+2` 的“需要切一张牌”场景。若输入 `3n+1` 手牌，应使用 `npm run analyze` 查看进张和听牌状态。传入副露时，手牌文本表示当前闭手部分，`--call` 表示已经固定的副露面子；例如一副露后的闭手何切通常是 11 张。
+
+何切 CLI 可选上下文参数包括：
+
+- `--mode 0` / `--mode 1`
+- `--seat 1z`
+- `--round 1z`
+- `--honba 1`
+- `--riichi-sticks 1`
+- `--dora 123z`
+- `--ura 123m`
+- 赤宝牌请在手牌或副露中写作 `0m/0p/0s`。
+- `--no-kuitan`
+- `--double-yakuman`
+- `--call pon:555z`
+- `--call chi:789p:8p:left`
+- `--call ankan:1111m`
+- `--call minkan:9999p:9p:right`
+- `--call kakan:2222s:2s:self`
+- `--verbose`
 
 何切结果会包含：
 
 - `recommendation`：推荐切牌。
-- `candidates`：候选切牌。服务层默认包含所有可切牌候选，候选自身带有 `shanten` 表示切出后的向听数。
+- `recommendedCandidate`：推荐候选的详细指标和理由。
+- `calls` / `context`：本次何切使用的副露和局面上下文。
+- `candidates`：全量候选切牌。默认不返回，使用 `verbose` 或 `--verbose` 时返回。候选自身带有 `shanten` 表示切出后的向听数。
 - `score`：候选总评分。
 - `scoreBreakdown`：向听、进张、好形、形状、打点潜力分项。
 - `reasons`：结构化推荐理由。
@@ -149,7 +172,7 @@ npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z --ve
 - `--riichi-sticks 1`
 - `--dora 123z`
 - `--ura 123m`
-- `--aka 1`
+- 赤宝牌请在手牌或副露中写作 `0m/0p/0s`。
 - `--call pon:555z`
 - `--call chi:789p:8p:left`
 - `--call ankan:1111m`

@@ -38,7 +38,7 @@ CLI：
 
 ```bash
 npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z
-npm run score -- "123m456m789p234s22z" 4s ron --riichi --dora 1z --ura 1s --aka 1
+npm run score -- "123m406m789p234s22z" 4s ron --riichi --dora 1z --ura 1s
 ```
 
 副露输入示例：
@@ -73,7 +73,7 @@ npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z --ve
 
 ## AgariContext 字段
 
-- `hand`：和牌后的 14 张门前手牌。当前红五不在 `TileId` 中区分。
+- `hand`：和牌后的门前手牌。服务层和 CLI 可用 `0m/0p/0s` 输入赤五，内部会规范化为 `5m/5p/5s`，并统计赤宝牌数量。
 - `winningTile`：和牌牌。
 - `method`：`ron` 或 `tsumo`。
 - `calls`：副露信息，复用 `core/state.ts` 中的 `Call`。手牌 `hand`/`text` 只包含闭合部分，不包含副露牌。
@@ -85,7 +85,7 @@ npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z --ve
 - `riichiSticks`：供托立直棒数。
 - `doraIndicators`：宝牌指示牌。
 - `uraDoraIndicators`：里宝牌指示牌。只有立直或两立直时计入，否则给 warning 并忽略。
-- `akaDoraCount`：赤宝牌数量。只有 `rules.akaDora` 为 true 时计入，否则给 warning 并忽略。
+- `akaDoraCount`：赤宝牌数量。服务层会从 `text` 中的 `0m/0p/0s` 自动统计；结构化调用仍可显式传入该字段作为兼容。只有 `rules.akaDora` 为 true 时计入，否则给 warning 并忽略。
 - `rules.countDoubleYakuman`：是否把国士十三面、四暗刻单骑、纯正九莲宝灯、大四喜等按双倍役满结算。默认 `false`。
 
 ## 上下文校验
@@ -103,7 +103,7 @@ npm run score -- "123m456m789p234s22z" 4s ron --riichi --seat 3z --round 1z --ve
 
 当前会继续计分但返回 warning 的情况：
 
-- 传入赤宝牌数量，但规则未启用赤宝牌。
+- 传入或解析到赤宝牌，但规则未启用赤宝牌。
 - 未立直时传入里宝牌指示牌。
 
 ## 当前支持的分解
@@ -150,7 +150,7 @@ CLI 使用 `--call type:tiles[:calledTile[:from]]`：
 - `--call minkan:9999p:9p:right`
 - `--call kakan:2222s:2s:self`
 - `--ura 123m`
-- `--aka 1`
+- 赤宝牌在手牌或副露中写作 `0m/0p/0s`。
 
 副露时部分役种会按规则减番或不成立：三色同顺、一气通贯、混全带幺九、纯全带幺九、混一色、清一色会按开门番数计算；平和、一杯口、二杯口、立直、两立直、门前清自摸只在门清时成立。断幺九是否允许副露成立由 `rules.kuitan` 控制。
 

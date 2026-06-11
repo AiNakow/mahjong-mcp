@@ -364,7 +364,7 @@ valueScore = primaryRoute.score + secondaryRoute.score * secondaryValueRouteRati
 - `secondaryRoute`：分数第二高的兼容路线，按比例折算。
 - `secondaryValueRouteRatio`：默认 `0.35`，表示次要路线只按 35% 计入。
 
-这样可以避免“役牌 + 断幺 + 七对子 + 染手”全部叠加导致虚高，同时又不会完全忽略兼容路线。
+这样可以避免多条役种路线全部叠加导致虚高，同时又不会完全忽略兼容路线。
 
 当前路线包括：
 
@@ -373,10 +373,16 @@ yakuhai: 役牌路线
 tanyao: 断幺路线
 chiitoi: 七对子路线
 honitsu: 染手路线
+ittsu: 一气通贯路线
+sanshoku: 三色同顺路线
+chanta: 全带路线
+toitoi: 对对和路线
 scoring: 听牌实算打点
 ```
 
-当候选切出后已经听牌，且 `useScoringForTenpaiValue` 为 true 时，value evaluator 会枚举该候选的待牌，调用 `calculateAgariScore` 估算最高和牌点数，并按 `scoringValueDivisor` 折算为打点路线分。默认 `scoringValueDivisor` 为 `100`，例如最高和牌点数 5200 点会贡献约 52 分。
+当候选切出后已经听牌，且 `useScoringForTenpaiValue` 为 true 时，value evaluator 会枚举该候选的待牌，调用 `calculateAgariScore` 估算最高和牌点数，并按 `scoringValueDivisor` 折算为打点路线分。默认 `scoringValueDivisor` 为 `100`，例如最高和牌点数 5200 点会贡献约 52 分。何切上下文中的副露、场风、自风、规则、宝牌、本场和立直棒会透传给听牌实算。
+
+一气通贯和三色同顺按顺子段完成度做静态启发式：完整顺子权重高于两张搭子，至少需要路线覆盖三段或三色且已有明确完成段才给分。全带按幺九相关面子、搭子和对子数量保守加分，并与断幺天然互斥。对对和按刻子和对子结构给分，通常会与七对子形成主次路线关系。
 
 ### 役牌与断幺冲突
 
@@ -396,6 +402,8 @@ yakuhaiScore = yakuhaiPairBonus * (1 - tanyaoStrength * yakuhaiTanyaoConflictDec
 - `0`：幺九字牌较多，断幺路线弱。
 
 `yakuhaiTanyaoConflictDecay` 默认 `0.6`。断幺强度越高，役牌路线加分越低。
+
+如果何切上下文提供 `bakaze` 或 `seatWind`，役牌路线会把对应风牌对子也纳入判断。副露手且 `rules.kuitan` 为 false 时，断幺路线不会作为有效起和路线加分。
 
 ### 拆役牌对子转断幺
 
@@ -424,10 +432,10 @@ tanyaoRouteScore += breakYakuhaiPairForTanyaoBonus
 
 以下项目等完整局面和规则模块更成熟后再实现：
 
-- 根据完整 `GameState` 自动注入场风、自风、立直、宝牌和副露上下文。
+- 根据完整 `GameState` 自动注入巡目、对手弃牌河、立直状态和副露威胁。
 - 对一向听候选做二层进张后的期望打点枚举。
 - 将防守、点棒状况和排名需求纳入打点权重。
-- 混全带幺九/纯全带幺九。
+- 纯全带幺九与混全带幺九的细分番型价值。
 
 ## 第一版 reasons 示例
 
@@ -519,7 +527,7 @@ function renderNanikiruExplanation(result: EvaluatedNanikiruAnalysis): string {
 当前服务职责：
 
 - `analyzeHandText`：通用手牌分析，区分 `3n+1` 和 `3n+2`。
-- `analyzeNanikiru`：何切专用包装，只接受 `3n+2`。
+- `analyzeNanikiru`：何切专用包装，只接受 `3n+2` 闭手牌，并可接收副露和局面上下文。
 
 当前已新增：
 
@@ -541,6 +549,7 @@ src/explanation/
 
 - `analyzeHandText` 负责基础牌理分析。
 - `evaluateNanikiru` 基于 `analyzeHandText` 的结果进行评分。
+- `NanikiruContext` 承载副露、场风/自风、规则、宝牌和本场等上下文。
 - 具体评分特征已拆入 `evaluators/`，避免 `evaluateNanikiru` 继续膨胀。
 - `analyzeNanikiru` 返回评分后的候选、推荐牌、`scoreBreakdown`、`reasons` 和 `explanation`。
 - `renderNanikiruExplanation` 只渲染 reasons。
