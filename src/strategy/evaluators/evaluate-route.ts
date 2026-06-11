@@ -51,7 +51,10 @@ export function evaluateRouteCoherence(
     }
 
     const improvement = route.strength - previous;
-    if (improvement >= 0.25) {
+    if (
+      improvement >= 0.25
+      && !isWeakTanyaoAroundDoraYakuhaiPair(route, afterDiscard, context)
+    ) {
       const improvementScore = Math.round(improvement * policy.routeImprovementBonus);
       score += improvementScore;
       reasons.push({
@@ -103,7 +106,7 @@ export function evaluateRouteCoherence(
       type: "route",
       polarity: "negative",
       priority: 66,
-      message: `切 ${discard} 先损失中张却仍留下幺九障碍，断幺路线效率需要打折。`,
+      message: `切 ${discard} 先损失断幺牌却仍留下幺九障碍，断幺路线效率需要打折。`,
       data: {
         discard,
         route: "tanyao",
@@ -271,6 +274,31 @@ function getTerminalHonorPairCount(tiles: readonly TileId[]): number {
   return [...counts].filter(([tile, count]) => count >= 2 && isTerminalOrHonor(tile)).length;
 }
 
+function isWeakTanyaoAroundDoraYakuhaiPair(
+  route: RouteStrength,
+  tiles: readonly TileId[],
+  context: NanikiruContext,
+): boolean {
+  return route.route === "tanyao"
+    && route.strength < 0.7
+    && hasDoraYakuhaiPair(tiles, context);
+}
+
+function hasDoraYakuhaiPair(tiles: readonly TileId[], context: NanikiruContext): boolean {
+  const doraTiles = new Set((context.doraIndicators ?? []).map(nextDoraTile));
+  if (doraTiles.size === 0) {
+    return false;
+  }
+
+  const counts = countTileIds(tiles);
+  for (const [tile, count] of counts) {
+    if (count >= 2 && doraTiles.has(tile) && isYakuhaiTile(tile, context)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function countPairs(tiles: readonly TileId[]): number {
   const counts = countTileIds(tiles);
   return [...counts.values()].filter((count) => count >= 2).length;
@@ -305,4 +333,16 @@ function isTerminalOrHonor(tile: TileId): boolean {
 
 function isOpenHand(context: NanikiruContext): boolean {
   return (context.calls ?? []).some((call) => call.type !== "ankan");
+}
+
+function nextDoraTile(indicator: TileId): TileId {
+  const rank = Number(indicator[0]);
+  const suit = indicator[1];
+  if (suit === "z") {
+    if (rank >= 1 && rank <= 4) {
+      return `${rank === 4 ? 1 : rank + 1}z` as TileId;
+    }
+    return `${rank === 7 ? 5 : rank + 1}z` as TileId;
+  }
+  return `${rank === 9 ? 1 : rank + 1}${suit}` as TileId;
 }

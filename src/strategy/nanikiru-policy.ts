@@ -37,6 +37,13 @@ export interface NanikiruPolicy {
   shantenBackUkeireMultiplier: number;
   shantenBackGoodShapeMultiplier: number;
   shantenBackDefenseOverrideDelta: number;
+  earlyLowValueTenpaiTurnMax: number;
+  lowValueTenpaiWaitsMax: number;
+  shantenBackImprovementMinWaits: number;
+  shantenBackImprovementMinGoodShape: number;
+  shantenBackImprovementShantenMultiplier: number;
+  shantenBackImprovementUkeireMultiplier: number;
+  shantenBackImprovementGoodShapeMultiplier: number;
 }
 
 export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
@@ -78,4 +85,11 @@ export const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   shantenBackUkeireMultiplier: 0.35,
   shantenBackGoodShapeMultiplier: 0.25,
   shantenBackDefenseOverrideDelta: 300,
+  earlyLowValueTenpaiTurnMax: 6,
+  lowValueTenpaiWaitsMax: 4,
+  shantenBackImprovementMinWaits: 30,
+  shantenBackImprovementMinGoodShape: 16,
+  shantenBackImprovementShantenMultiplier: 0.4,
+  shantenBackImprovementUkeireMultiplier: 0.7,
+  shantenBackImprovementGoodShapeMultiplier: 0.7,
 };

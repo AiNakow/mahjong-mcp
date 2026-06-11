@@ -12,6 +12,7 @@
 - 形状保留。
 - 打点潜力。
 - 特殊路线，例如七对子、染手、断幺、役牌。
+- 特殊局面下是否允许向听后退，例如早巡低价值窄听退向改良。
 - 若提供局面信息，还应考虑对手威胁和安全度。
 
 进入真实局面后，策略还会继续增加：
@@ -204,6 +205,16 @@ type NanikiruPolicy = {
   breakYakuhaiPairForTanyaoBonus: number;
   useScoringForTenpaiValue: boolean;
   scoringValueDivisor: number;
+  shantenBackUkeireMultiplier: number;
+  shantenBackGoodShapeMultiplier: number;
+  shantenBackDefenseOverrideDelta: number;
+  earlyLowValueTenpaiTurnMax: number;
+  lowValueTenpaiWaitsMax: number;
+  shantenBackImprovementMinWaits: number;
+  shantenBackImprovementMinGoodShape: number;
+  shantenBackImprovementShantenMultiplier: number;
+  shantenBackImprovementUkeireMultiplier: number;
+  shantenBackImprovementGoodShapeMultiplier: number;
 };
 ```
 
@@ -242,6 +253,16 @@ const DEFAULT_NANIKIRU_POLICY: NanikiruPolicy = {
   breakYakuhaiPairForTanyaoBonus: 50,
   useScoringForTenpaiValue: true,
   scoringValueDivisor: 100,
+  shantenBackUkeireMultiplier: 0.35,
+  shantenBackGoodShapeMultiplier: 0.25,
+  shantenBackDefenseOverrideDelta: 300,
+  earlyLowValueTenpaiTurnMax: 6,
+  lowValueTenpaiWaitsMax: 4,
+  shantenBackImprovementMinWaits: 30,
+  shantenBackImprovementMinGoodShape: 16,
+  shantenBackImprovementShantenMultiplier: 0.4,
+  shantenBackImprovementUkeireMultiplier: 0.7,
+  shantenBackImprovementGoodShapeMultiplier: 0.7,
 };
 ```
 
@@ -515,6 +536,48 @@ tanyaoRouteScore += breakYakuhaiPairForTanyaoBonus
 ```
 
 例如 `34678m34p77755s66z` 这类牌，拆 `66z` 后保留的主要是中张和顺子延展，当前评分会优先认可断幺路线，而不是机械保留役牌对子。
+
+### 早巡低价值听牌退向改良
+
+通常情况下，何切排序会把向听后退候选压在不退向候选之后。当前实现只在很窄的条件下放开这个限制：
+
+- 当前已经听牌。
+- 巡目不晚于 `earlyLowValueTenpaiTurnMax`，默认第 6 巡。
+- 没有对手立直或一发威胁。
+- 当前听牌待牌数不超过 `lowValueTenpaiWaitsMax`，默认 4 枚。
+- 当前听牌候选切后手牌没有实际宝牌或赤宝牌价值。
+- 退向候选至少有 `shantenBackImprovementMinWaits` 枚进张，默认 30 枚。
+- 退向候选至少有 `shantenBackImprovementMinGoodShape` 枚好型相关进张，默认 16 枚。
+- 若有宝牌指示牌，退向后的有效进张中需要包含实际宝牌进张。
+
+满足这些条件时，候选仍然是向听后退，但会按改良路线折算：
+
+```text
+shantenScore 使用 shantenBackImprovementShantenMultiplier
+ukeireScore 使用 shantenBackImprovementUkeireMultiplier
+goodShapeScore 使用 shantenBackImprovementGoodShapeMultiplier
+```
+
+默认折算值分别为 `0.4`、`0.7`、`0.7`。这表示早巡低价值窄听可以为了宝牌和好型改良退向，但不会把所有退向候选都当作正常一向听处理。
+
+对应 reasons 会说明：
+
+```text
+当前低价值窄听，切 5p 退向后的 32 枚进张按早巡改良价值折算。
+早巡低价值窄听时，优先保留宝牌进张和役种延展的高质量改良。
+```
+
+如果存在主动威胁，例如对手立直，则该特殊放开不生效，听牌候选仍优先保留。
+
+### 候选间比较启发式
+
+推荐候选会额外比较第一名和第二名。如果两个候选都是一向听，且总进张与好型进张数量相同，当推荐候选切出的是中张、次优候选切出的是外侧数牌时，会加入防守比较理由：
+
+```text
+与切 8p 牌效接近时，先处理 6p 这类中张，避免听牌时再切相对更危险的牌。
+```
+
+这类理由不替代防守 evaluator，只用于牌效相近时解释“为什么先处理危险中张”。另外，若手牌包含宝牌役牌对子且断幺路线强度不足，路线改良不会把该手牌误解释为断幺倾向。
 
 ### 暂不实现的打点项
 

@@ -39,6 +39,51 @@ test("chooseAction does not prefer breaking dora-side taatsu by stepping back fr
   )), true);
 });
 
+test("chooseAction can step back from early low-value tenpai for dora good-shape improvement", () => {
+  const state = makeState(
+    ["2p", "2p", "2p", "3p", "5p", "7p", "1s", "2s", "3s", "5s", "6s", "7s", "8s", "1p"],
+    {
+      doraIndicators: ["7p"],
+      turn: 6,
+      bakaze: "1z",
+      selfSeatWind: "1z",
+    },
+  );
+  const decision = chooseAction(state);
+  const fivePin = decision.analysis.candidates[0];
+
+  assert.equal(decision.mode, "attack");
+  assert.deepEqual(decision.action, { type: "discard", tile: "5p" });
+  assert.equal(fivePin.discard, "5p");
+  assert.equal(fivePin.shanten, 1);
+  assert.ok(fivePin.reasons.some((reason) => (
+    reason.type === "ukeire"
+    && String(reason.message).includes("早巡低价值窄听")
+  )));
+  assert.ok(fivePin.reasons.some((reason) => (
+    reason.type === "good_shape"
+    && String(reason.message).includes("早巡改良价值")
+  )));
+});
+
+test("chooseAction does not step back from low-value tenpai against riichi", () => {
+  const state = makeState(
+    ["2p", "2p", "2p", "3p", "5p", "7p", "1s", "2s", "3s", "5s", "6s", "7s", "8s", "1p"],
+    {
+      doraIndicators: ["7p"],
+      turn: 6,
+      bakaze: "1z",
+      selfSeatWind: "1z",
+      opponentRiichi: true,
+      opponentDiscards: ["9m", "1z"],
+    },
+  );
+  const decision = chooseAction(state);
+
+  assert.equal(decision.mode, "push");
+  assert.equal(decision.analysis.candidates[0].shanten, 0);
+});
+
 test("chooseAction shifts to defense against riichi and can prefer genbutsu", () => {
   const state = makeState(
     ["3m", "4m", "5m", "3p", "5p", "1s", "3s", "7s", "8s", "9s", "1z", "2z", "3z", "4z"],
@@ -71,6 +116,28 @@ test("chooseAction pushes high-value iishanten hands against riichi", () => {
 
   assert.equal(decision.mode, "push");
   assert.match(decision.explanation, /一向听且打点较高/);
+});
+
+test("chooseAction does not explain dora yakuhai pair hands as tanyao leaning", () => {
+  const state = makeState(
+    ["6p", "6p", "7p", "8p", "9p", "3s", "5s", "6s", "7s", "7s", "7s", "7z", "7z", "2s"],
+    {
+      doraIndicators: ["6z"],
+      bakaze: "1z",
+      selfSeatWind: "1z",
+      turn: 8,
+    },
+  );
+  const decision = chooseAction(state);
+
+  assert.deepEqual(decision.action, { type: "discard", tile: "6p" });
+  assert.doesNotMatch(decision.explanation, /断幺路线/);
+  assert.match(decision.explanation, /宝牌/);
+  assert.match(decision.explanation, /避免听牌时再切/);
+  assert.ok(decision.analysis.candidates[0]?.reasons.some((reason) => (
+    reason.type === "value"
+    && String(reason.message).includes("役牌对子 7z")
+  )));
 });
 
 test("chooseAction shifts balance hands toward defense when leading near final", () => {

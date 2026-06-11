@@ -158,6 +158,37 @@ test("evaluateNanikiru explains value route difference against the runner-up", (
   assert.doesNotMatch(explanation, /9 组两面搭子/);
 });
 
+test("evaluateNanikiru prefers the safer outer discard when efficiency is tied", () => {
+  const analysis = analyzeHandText("33555m2334p22s67s1p");
+  assert.equal(analysis.kind, "discard");
+
+  if (analysis.kind !== "discard") {
+    throw new Error("expected discard analysis");
+  }
+
+  const evaluated = evaluateNanikiru(analysis, DEFAULT_NANIKIRU_POLICY, {
+    doraIndicators: ["6s"],
+    turn: 7,
+    bakaze: "1z",
+    seatWind: "1z",
+  });
+  const best = evaluated.candidates[0];
+  const explanation = renderNanikiruExplanation(evaluated);
+
+  assert.equal(best.discard, "2s");
+  assert.equal(evaluated.candidates[1]?.discard, "3m");
+  assert.ok(!best.reasons.some((reason) => (
+    reason.type === "defenseComparison"
+    && String(reason.message).includes("避免听牌时再切相对更危险的牌")
+  )));
+  assert.doesNotMatch(explanation, /避免听牌时再切相对更危险的牌/);
+  assert.ok(best.reasons.some((reason) => (
+    reason.type === "defenseComparison"
+    && String(reason.message).includes("当前和转听牌时的中张压力更低")
+  )));
+  assert.match(explanation, /当前和转听牌时的中张压力更低/);
+});
+
 test("renderNanikiruExplanation renders high-priority reasons", () => {
   const analysis = analyzeHandText("3456m3455p123788s");
   assert.equal(analysis.kind, "discard");

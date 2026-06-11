@@ -116,3 +116,7 @@
 - 按 `docs/南四避四与流局听牌策略方案.md` 落地南四微差避四策略：`PlacementAdjustment` 新增 `avoidFourthGoal`、`shantenWeightMul` 和 `ukeireWeightMul`，并将向听数传入局况层。
 - `chooseAction` 已应用新增局况倍率；南四三位微差会在 `winOut`、`tenpaiKeep`、`fold` 间切换，自家四位会进入 `chase` 追分目标，早巡慢手不会因避四直接降级为防守。
 - 扩展 `tests/choose-action.test.ts`，覆盖早巡不弃和、听牌抢和、一向听保听、终盘手慢且四位威胁转防守、自家四位追分；同步更新 README、`docs/strategy-and-explanation.md` 和 `docs/decide-cli.md`。
+- 扩展何切排序中的向听后退例外：早巡、无主动威胁、当前低价值窄听时，允许退向到一向听追求宝牌进张和好型改良，并通过 `shantenBackImprovement*` 系列策略参数折算向听、进张和好型分。
+- 修正宝牌役牌对子场景的路线解释：弱断幺改良不会覆盖高价值役牌对子判断，避免解释中误报“断幺路线”；同时在牌效接近的一向听候选中补充“先处理中张，避免听牌后切危险牌”的比较理由。
+- 扩展 `tests/choose-action.test.ts`，覆盖早巡低价值听牌可退向改良、对手立直时不退向，以及宝牌役牌对子不解释为断幺倾向。
+- 同步更新 `README.md` 和 `docs/strategy-and-explanation.md`，记录早巡低价值听牌退向改良、候选间比较启发式和新增策略参数。
