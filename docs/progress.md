@@ -129,3 +129,4 @@
 - 新增 `src/strategy/arbitration.ts`，集中候选排序、向听后退压制、候选间进张/打点/防守比较和危险中张/外侧牌 tie-break reasons。
 - 扩展 `NanikiruPolicy`，新增全带三色复合路线、同向听改良参数和 `normalizeStrategyPolicy()`；外部继续兼容 `Partial<NanikiruPolicy>`，内部可读取 `strategy.weights/routes/value/improvement/defense/arbitration` 分组。
 - 新增 `tests/strategy-refactor.test.ts`，覆盖 candidate feature、route portfolio、同向听改良独立计分和 policy 分组兼容；重构后 `npm run check` 与 `npm test` 均通过，当前测试总数为 98 个。
+- 更新 `docs/和牌率放铳率期望点局收支工具方案.md`：明确和率按最终听牌有效枚数估算，综合听牌种类、真实剩余枚数、听牌形和剩余巡目；听牌形权重保持克制，双碰按每种待牌最多 2 枚计算；放铳率新增通过筋组压缩模型，生张无筋中张会随全局/同色通过筋和巡目增加而提高风险。
