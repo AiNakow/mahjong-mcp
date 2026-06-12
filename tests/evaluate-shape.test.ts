@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { tilesToCounts34 } from "../src/core/counts.ts";
+import type { TileId } from "../src/core/tile.ts";
 import type { DiscardCandidate } from "../src/service/analyze.ts";
 import { evaluateShape, extractShapeFeatures } from "../src/strategy/evaluators/evaluate-shape.ts";
 
@@ -52,3 +54,35 @@ test("evaluateShape emits shape reasons and score", () => {
   assert.ok(result.reasons.some((reason) => reason.message.includes("复合形")));
   assert.ok(result.reasons.some((reason) => reason.message.includes("孤立幺九字牌")));
 });
+
+test("block efficiency uses actual remaining tiles for weak taatsu value", () => {
+  const afterDiscard: TileId[] = [
+    "3p", "5p", "8p", "9p", "9p",
+    "4s", "7s", "7s", "8s", "8s", "8s",
+    "1z", "1z",
+  ];
+  const candidate: DiscardCandidate = {
+    discard: "2s",
+    shanten: 2,
+    waits: [{ id: "3s", remaining: 4 }],
+    totalWaits: 26,
+    goodShapeCount: 0,
+    goodShapeDraws: [],
+  };
+
+  const normal = evaluateShape(afterDiscard, candidate, {
+    visibleTiles: tilesToCounts34([...afterDiscard, "2s"]),
+  });
+  const thinMiddle = evaluateShape(afterDiscard, candidate, {
+    visibleTiles: tilesToCounts34([...afterDiscard, "2s", "3s", "3s", "3s"]),
+  });
+
+  assert.ok(getBlockEfficiency(thinMiddle) > getBlockEfficiency(normal));
+});
+
+function getBlockEfficiency(result: ReturnType<typeof evaluateShape>): number {
+  const reason = result.reasons.find((item) => item.type === "shape" && typeof item.data?.blockEfficiency === "number");
+  assert.ok(reason);
+  assert.ok(reason.data);
+  return reason.data.blockEfficiency as number;
+}

@@ -156,7 +156,7 @@ function evaluateCandidate(
     });
   }
 
-  const shapeEvaluation = evaluateShape(afterDiscard, candidate);
+  const shapeEvaluation = evaluateShape(afterDiscard, candidate, context);
   const routeEvaluation = evaluateRouteCoherence(beforeFeature, feature, policy, context, {
     before: beforeRoutePortfolio,
     after: routePortfolio,

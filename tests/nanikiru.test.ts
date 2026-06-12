@@ -114,6 +114,27 @@ test("analyzeNanikiru derives aka dora count from red five notation", () => {
   assert.equal(result.hand.includes("5m"), true);
 });
 
+test("analyzeNanikiru prefers cutting weak isolated taatsu over compressed pair block in overblock hand", () => {
+  const result = analyzeNanikiru({
+    text: "30899p2477888s11z",
+    verbose: true,
+  });
+
+  assert.equal(result.recommendation, "2s");
+  assert.ok(result.recommendedCandidate?.reasons.some((reason) => (
+    reason.type === "shape"
+    && String(reason.message).includes("六搭子")
+    && String(reason.message).includes("孤立嵌张搭子")
+    && String(reason.message).includes("压缩")
+  )));
+  const eightPin = result.candidates?.find((candidate) => candidate.discard === "8p");
+  assert.ok(eightPin?.reasons.some((reason) => (
+    reason.type === "shape"
+    && reason.polarity === "negative"
+    && String(reason.message).includes("压缩复合块")
+  )));
+});
+
 test("analyzeNanikiru rejects invalid input", () => {
   assert.throws(
     () => analyzeNanikiru("这不是手牌"),
