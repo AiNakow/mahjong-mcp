@@ -1,6 +1,7 @@
 import type { TileId, WindTile } from "../core/tile.ts";
 import { DEFAULT_RULE_CONFIG, type RuleConfig } from "../core/rules.ts";
 import { parseTileGroupsWithRed } from "../core/tile.ts";
+import { tilesToCounts34 } from "../core/counts.ts";
 import { renderNanikiruExplanation } from "../explanation/render-nanikiru.ts";
 import {
   type ShantenMode,
@@ -23,7 +24,9 @@ import {
   type NanikiruContext,
 } from "../strategy/nanikiru-context.ts";
 import type { Reason } from "../strategy/reason.ts";
-import type { Call } from "../core/state.ts";
+import type { Call, GameState, PlayerState } from "../core/state.ts";
+import type { RoundEstimate } from "../ev/index.ts";
+import { applyEvDecision } from "../strategy/ev-decision.ts";
 
 export interface NanikiruInput {
   text: string;
@@ -37,10 +40,12 @@ export interface NanikiruInput {
   bakaze?: WindTile;
   rules?: RuleConfig;
   honba?: number;
+  turn?: number;
   riichiSticks?: number;
   doraIndicators?: TileId[];
   uraDoraIndicators?: TileId[];
   akaDoraCount?: number;
+  useEvDecision?: boolean;
 }
 
 export interface NanikiruCandidate {
@@ -53,6 +58,7 @@ export interface NanikiruCandidate {
   score: number;
   scoreBreakdown: NanikiruScoreBreakdown;
   reasons: Reason[];
+  estimate?: RoundEstimate;
 }
 
 export interface NanikiruAnalysis {
@@ -84,6 +90,7 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
     calls: request.calls,
     seatWind: request.seatWind,
     bakaze: request.bakaze,
+    turn: request.turn,
     rules: request.rules ?? DEFAULT_RULE_CONFIG,
     honba: request.honba,
     riichiSticks: request.riichiSticks,
@@ -103,6 +110,10 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
   }
   const policy = normalizeStrategyPolicy(request.policy);
   const evaluated = evaluateNanikiru(analysis, policy, context);
+  applyEvDecision(evaluated, buildEstimateState(evaluated.hand, context), {
+    enabled: request.useEvDecision ?? true,
+    mode: "attack",
+  });
   const explanation = renderNanikiruExplanation(evaluated);
 
   const result: NanikiruAnalysis = {
@@ -141,5 +152,54 @@ function toServiceCandidate(candidate: EvaluatedNanikiruCandidate): NanikiruCand
     score: candidate.score,
     scoreBreakdown: candidate.scoreBreakdown,
     reasons: candidate.reasons,
+    estimate: candidate.estimate,
+  };
+}
+
+function buildEstimateState(hand: readonly TileId[], context: NanikiruContext): GameState {
+  const self: PlayerState = {
+    seatWind: context.seatWind ?? "1z",
+    points: context.points ?? 25000,
+    hand: [...hand],
+    calls: context.calls ?? [],
+    discards: [],
+    riichi: false,
+    ippatsu: false,
+    menzen: (context.calls ?? []).every((call) => call.type === "ankan"),
+  };
+  const opponents: PlayerState[] = [
+    makeDefaultOpponent("2z"),
+    makeDefaultOpponent("3z"),
+    makeDefaultOpponent("4z"),
+  ];
+  return {
+    round: {
+      bakaze: context.bakaze ?? "1z",
+      kyoku: 1,
+      honba: context.honba ?? 0,
+      riichiSticks: context.riichiSticks ?? 0,
+      turn: context.turn ?? 8,
+    },
+    self,
+    opponents,
+    doraIndicators: context.doraIndicators ?? [],
+    visibleTiles: context.visibleTiles ?? tilesToCounts34([
+      ...hand,
+      ...(context.calls ?? []).flatMap((call) => call.tiles),
+      ...(context.doraIndicators ?? []),
+    ]),
+    rules: context.rules ?? DEFAULT_RULE_CONFIG,
+  };
+}
+
+function makeDefaultOpponent(seatWind: WindTile): PlayerState {
+  return {
+    seatWind,
+    points: 25000,
+    calls: [],
+    discards: [],
+    riichi: false,
+    ippatsu: false,
+    menzen: true,
   };
 }

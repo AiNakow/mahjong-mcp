@@ -7,6 +7,7 @@
     "analyze": "node src/service/analyze-cli.ts",
     "check": "tsc --noEmit",
     "decide": "node src/service/decide-cli.ts",
+    "estimate": "node src/service/estimate-cli.ts",
     "test": "node --test tests/**/*.test.ts",
     "nanikiru": "node src/service/nanikiru-cli.ts",
     "paili": "node src/hand/paili-cli.ts",

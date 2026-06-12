@@ -10,6 +10,7 @@ export type ReasonType =
   | "defenseComparison"
   | "riichi"
   | "placement"
+  | "ev"
   | "risk"
   | "rule";
 

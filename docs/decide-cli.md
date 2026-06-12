@@ -23,7 +23,9 @@ npm run decide -- --state examples/decide-state.example.json
 - `explanation`：中文解释。
 - `recommendedCandidate`：推荐切牌的核心评分、分项和 reasons。
 
-加 `--verbose` 会额外输出完整 `analysis`，包含所有候选。
+默认会启用 EV 二次仲裁：原策略排序后，若前列候选分数接近，系统会用和牌率、放铳率、期望点和局收支估算重排同一决策带内的候选。加 `--no-ev-decision` 可关闭该步骤，只看原策略排序。
+
+加 `--include-estimate` 会额外输出推荐候选的 EV 明细。加 `--verbose` 会额外输出完整 `analysis`，包含所有候选。
 
 ## 当前策略行为
 
@@ -71,6 +73,7 @@ analyze hand
   -> evaluate shape / route / value / improvement / defense
   -> apply placement policy
   -> arbitrate final order
+  -> EV estimate and second-pass arbitration
   -> render explanation
 ```
 
@@ -84,8 +87,11 @@ analyze hand
 - `value`
 - `improvement`
 - `defense`
+- `ev`
 
 静态役种路线统一由 `ROUTE_MODELS` registry 识别，并通过 `RoutePortfolio` 提供给 value 和 route evaluator。候选排序、向听后退压制和候选间比较理由集中在 `DecisionArbitrator`。
+
+EV 分数来自 `expectedRoundIncome / 100` 的低权重折算。它不会覆盖明确向听优势，只在同向听、原策略分数接近、且局收支差距足够明显时改变最终推荐。若 EV 改变排序，解释中会出现 `ev` 类型理由，说明相对候选的局收支差。
 
 ## 轻量参数
 
@@ -110,6 +116,8 @@ analyze hand
 - `--dora <tiles>`：宝牌指示牌，例如 `4m1z`。
 - `--no-kuitan`：关闭食断。
 - `--double-yakuman`：开启双倍役满。
+- `--include-estimate`：输出推荐候选的和牌率、放铳率、期望点和局收支明细。
+- `--no-ev-decision`：关闭 EV 二次仲裁。
 
 对手方向参数：
 

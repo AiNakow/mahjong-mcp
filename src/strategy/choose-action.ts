@@ -16,6 +16,7 @@ import {
   evaluatePlacementAdjustment,
   type PlacementAdjustment,
 } from "./placement.ts";
+import { applyEvDecision } from "./ev-decision.ts";
 
 export type StrategyMode = "attack" | "balance" | "defense" | "push";
 
@@ -33,6 +34,7 @@ export interface ActionDecision {
 
 export interface ChooseActionOptions {
   policy?: Partial<NanikiruPolicy>;
+  useEvDecision?: boolean;
 }
 
 export function chooseAction(state: GameState, options: ChooseActionOptions = {}): ActionDecision {
@@ -66,6 +68,10 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
   const mode = adjustModeByPlacement(baseMode, placement);
   const policy = applyPlacementPolicy(applyModePolicy(basePolicy, mode, highValueHand), placement);
   const analysis = evaluateNanikiru(preliminary, policy, context);
+  applyEvDecision(analysis, state, {
+    enabled: options.useEvDecision ?? true,
+    mode,
+  });
   addPlacementReasons(analysis, placement);
 
   return {

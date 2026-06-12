@@ -1,6 +1,7 @@
 import type { TileId } from "../core/tile.ts";
 import type { TileInfo } from "../hand/paili.ts";
 import type { DiscardAnalysis, DiscardCandidate } from "../service/analyze.ts";
+import type { RoundEstimate } from "../ev/index.ts";
 import { evaluateShape } from "./evaluators/evaluate-shape.ts";
 import { evaluateValuePotential } from "./evaluators/evaluate-value.ts";
 import { evaluateRouteCoherence } from "./evaluators/evaluate-route.ts";
@@ -23,12 +24,14 @@ export interface NanikiruScoreBreakdown {
   value: number;
   improvement: number;
   defense: number;
+  ev: number;
 }
 
 export interface EvaluatedNanikiruCandidate extends DiscardCandidate {
   score: number;
   scoreBreakdown: NanikiruScoreBreakdown;
   reasons: Reason[];
+  estimate?: RoundEstimate;
 }
 
 export interface EvaluatedNanikiruAnalysis {
@@ -177,6 +180,7 @@ function evaluateCandidate(
     value: valueEvaluation.score * policy.valueWeight,
     improvement: improvementEvaluation.score,
     defense: defenseEvaluation.score * policy.defenseWeight,
+    ev: 0,
   };
 
   const score = Object.values(scoreBreakdown).reduce((total, value) => total + value, 0);

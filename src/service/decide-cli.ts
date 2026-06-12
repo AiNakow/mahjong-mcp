@@ -4,6 +4,7 @@ import { DEFAULT_RULE_CONFIG, type RuleConfig } from "../core/rules.ts";
 import type { Call, Discard, GameState, PlayerState } from "../core/state.ts";
 import { parseTileGroupsWithRed, parseTileId, type TileId, type WindTile } from "../core/tile.ts";
 import { buildVisibleTilesFromState, chooseAction } from "../strategy/choose-action.ts";
+import { estimateDiscardActions } from "./estimate.ts";
 import {
   nextValue,
   parseCallWithRed,
@@ -31,6 +32,8 @@ interface CliOptions {
   text?: string;
   statePath?: string;
   verbose?: boolean;
+  includeEstimate?: boolean;
+  useEvDecision?: boolean;
   draw?: TileId;
   calls?: Call[];
   seatWind?: WindTile;
@@ -55,13 +58,14 @@ interface CliResult {
   explanation: string;
   recommendedCandidate?: unknown;
   analysis?: unknown;
+  estimate?: unknown;
 }
 
 try {
   const options = parseArgs(process.argv.slice(2));
   const state = options.statePath ? loadState(options.statePath) : buildStateFromOptions(options);
-  const decision = chooseAction(state);
-  console.log(JSON.stringify(toCliResult(decision, options.verbose)));
+  const decision = chooseAction(state, { useEvDecision: options.useEvDecision });
+  console.log(JSON.stringify(toCliResult(decision, state, options)));
 } catch (error) {
   if (error instanceof Error) {
     console.error(error.message);
@@ -90,6 +94,10 @@ function parseArgs(args: string[]): CliOptions {
       options.statePath = nextValue(args, ++i, arg);
     } else if (arg === "--verbose") {
       options.verbose = true;
+    } else if (arg === "--include-estimate") {
+      options.includeEstimate = true;
+    } else if (arg === "--no-ev-decision") {
+      options.useEvDecision = false;
     } else if (arg === "--draw") {
       options.draw = parseTileId(nextValue(args, ++i, arg));
     } else if (arg === "--call") {
@@ -225,7 +233,7 @@ function getOpponentFromFlag(arg: string): RelativeOpponent {
   throw new Error(`未知对手方向参数：${arg}`);
 }
 
-function toCliResult(decision: ReturnType<typeof chooseAction>, verbose = false): CliResult {
+function toCliResult(decision: ReturnType<typeof chooseAction>, state: GameState, options: CliOptions): CliResult {
   const best = decision.analysis.candidates[0];
   const result: CliResult = {
     mode: decision.mode,
@@ -240,7 +248,14 @@ function toCliResult(decision: ReturnType<typeof chooseAction>, verbose = false)
       reasons: best.reasons,
     } : undefined,
   };
-  if (verbose) {
+  if (options.includeEstimate) {
+    result.estimate = estimateDiscardActions({
+      state,
+      discard: best?.discard,
+      includeCandidates: options.verbose,
+    });
+  }
+  if (options.verbose) {
     result.analysis = decision.analysis;
   }
   return result;

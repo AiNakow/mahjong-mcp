@@ -125,7 +125,7 @@ npm run nanikiru -- "手牌: 3456m 3455p 123788s" --mode 0 --verbose
 npm run nanikiru -- "234m456p778s22z" --call pon:555z --seat 2z --round 1z --dora 1m --verbose
 ```
 
-`nanikiru` 只用于 `3n+2` 的“需要切一张牌”场景。若输入 `3n+1` 手牌，应使用 `npm run analyze` 查看进张和听牌状态。传入副露时，手牌文本表示当前闭手部分，`--call` 表示已经固定的副露面子；例如一副露后的闭手何切通常是 11 张。
+`nanikiru` 只用于 `3n+2` 的“需要切一张牌”场景。若输入 `3n+1` 手牌，应使用 `npm run analyze` 查看进张和听牌状态。传入副露时，手牌文本表示当前闭手部分，`--call` 表示已经固定的副露面子；例如一副露后的闭手何切通常是 11 张。何切默认会在原策略排序后使用简化局面的 EV 二次仲裁；缺少对手河牌时放铳率估算置信度较低，可用 `--no-ev-decision` 关闭。
 
 何切 CLI 可选上下文参数包括：
 
@@ -145,6 +145,7 @@ npm run nanikiru -- "234m456p778s22z" --call pon:555z --seat 2z --round 1z --dor
 - `--call minkan:9999p:9p:right`
 - `--call kakan:2222s:2s:self`
 - `--verbose`
+- `--no-ev-decision`
 
 何切结果会包含：
 
@@ -152,6 +153,7 @@ npm run nanikiru -- "234m456p778s22z" --call pon:555z --seat 2z --round 1z --dor
 - `recommendedCandidate`：推荐候选的详细指标和理由。
 - `calls` / `context`：本次何切使用的副露和局面上下文。
 - `candidates`：全量候选切牌。默认不返回，使用 `verbose` 或 `--verbose` 时返回。候选自身带有 `shanten` 表示切出后的向听数。
+- `estimate`：候选的 EV 明细，包括和牌率、放铳率、期望点和局收支。默认推荐候选会带有该字段；使用 `--no-ev-decision` 时不生成。
 - `score`：候选总评分。
 - `scoreBreakdown`：向听、进张、好形、形状、路线、打点潜力、改良和防守分项。
 - `reasons`：结构化推荐理由，包含正面、负面和中性理由。

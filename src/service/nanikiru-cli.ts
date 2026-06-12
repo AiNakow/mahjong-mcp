@@ -25,10 +25,12 @@ interface CliOptions {
   bakaze?: WindTile;
   rules?: RuleConfig;
   honba?: number;
+  turn?: number;
   riichiSticks?: number;
   doraIndicators?: TileId[];
   uraDoraIndicators?: TileId[];
   akaDoraCount?: number;
+  useEvDecision?: boolean;
 }
 
 try {
@@ -70,6 +72,8 @@ function parseArgs(args: string[]): CliOptions {
       options.bakaze = parseWind(nextValue(args, ++i, arg));
     } else if (arg === "--honba") {
       options.honba = parseNonNegativeInteger(nextValue(args, ++i, arg), arg);
+    } else if (arg === "--turn") {
+      options.turn = parseNonNegativeInteger(nextValue(args, ++i, arg), arg);
     } else if (arg === "--riichi-sticks") {
       options.riichiSticks = parseNonNegativeInteger(nextValue(args, ++i, arg), arg);
     } else if (arg === "--dora") {
@@ -80,6 +84,8 @@ function parseArgs(args: string[]): CliOptions {
       const parsed = parseCallWithRed(nextValue(args, ++i, arg));
       options.calls = [...(options.calls ?? []), parsed.call];
       options.akaDoraCount = (options.akaDoraCount ?? 0) + parsed.akaDoraCount;
+    } else if (arg === "--no-ev-decision") {
+      options.useEvDecision = false;
     } else {
       throw new Error(`未知参数：${arg}`);
     }
