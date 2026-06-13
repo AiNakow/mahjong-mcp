@@ -23,6 +23,21 @@ export function renderNanikiruExplanation(analysis: EvaluatedNanikiruAnalysis): 
   if (warnings.length > 0) {
     lines.push("", "注意：", ...warnings.map((reason) => `- ${reason.message}`));
   }
+  if (best.riichiJudgment) {
+    lines.push(
+      "",
+      "立直判断：",
+      `- ${best.riichiJudgment.levelText}（${best.riichiJudgment.score}/100）。`,
+      ...best.riichiJudgment.reasons.slice(0, 3).map((reason) => `- ${reason}`),
+    );
+  }
+  if (analysis.riichiPlanDecision) {
+    lines.push(
+      "",
+      "路线判断：",
+      ...analysis.riichiPlanDecision.reasons.map((reason) => `- ${reason}`),
+    );
+  }
 
   return lines.join("\n");
 }

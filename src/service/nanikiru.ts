@@ -10,9 +10,11 @@ import {
 import { analyzeHandText, type DiscardAnalysis } from "./analyze.ts";
 import { HandTextParseError, parseHandText } from "./parse-hand.ts";
 import {
+  applyRiichiPlanDecision,
   evaluateNanikiru,
   type EvaluatedNanikiruCandidate,
   type NanikiruScoreBreakdown,
+  type RiichiPlanDecision,
 } from "../strategy/evaluate-nanikiru.ts";
 import {
   normalizeStrategyPolicy,
@@ -27,6 +29,7 @@ import type { Reason } from "../strategy/reason.ts";
 import type { Call, GameState, PlayerState } from "../core/state.ts";
 import type { RoundEstimate } from "../ev/index.ts";
 import { applyEvDecision } from "../strategy/ev-decision.ts";
+import type { RiichiJudgment } from "../strategy/riichi.ts";
 
 export interface NanikiruInput {
   text: string;
@@ -38,6 +41,9 @@ export interface NanikiruInput {
   calls?: Call[];
   seatWind?: WindTile;
   bakaze?: WindTile;
+  kyoku?: number;
+  points?: number;
+  opponents?: NanikiruContext["opponents"];
   rules?: RuleConfig;
   honba?: number;
   turn?: number;
@@ -59,6 +65,7 @@ export interface NanikiruCandidate {
   scoreBreakdown: NanikiruScoreBreakdown;
   reasons: Reason[];
   estimate?: RoundEstimate;
+  riichiJudgment?: RiichiJudgment;
 }
 
 export interface NanikiruAnalysis {
@@ -74,6 +81,7 @@ export interface NanikiruAnalysis {
   recommendation?: TileId;
   recommendedCandidate?: NanikiruCandidate;
   candidates?: NanikiruCandidate[];
+  riichiPlanDecision?: RiichiPlanDecision;
   explanation: string;
   raw?: DiscardAnalysis["raw"];
 }
@@ -90,6 +98,9 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
     calls: request.calls,
     seatWind: request.seatWind,
     bakaze: request.bakaze,
+    kyoku: request.kyoku,
+    points: request.points,
+    opponents: request.opponents,
     turn: request.turn,
     rules: request.rules ?? DEFAULT_RULE_CONFIG,
     honba: request.honba,
@@ -114,6 +125,7 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
     enabled: request.useEvDecision ?? true,
     mode: "attack",
   });
+  applyRiichiPlanDecision(evaluated);
   const explanation = renderNanikiruExplanation(evaluated);
 
   const result: NanikiruAnalysis = {
@@ -128,6 +140,7 @@ export function analyzeNanikiru(input: string | NanikiruInput, mode: ShantenMode
     isAgari: evaluated.isAgari,
     recommendation: evaluated.recommendation,
     recommendedCandidate: evaluated.candidates[0] ? toServiceCandidate(evaluated.candidates[0]) : undefined,
+    riichiPlanDecision: evaluated.riichiPlanDecision,
     explanation,
   };
   if (request.verbose || request.includeCandidates) {
@@ -153,6 +166,7 @@ function toServiceCandidate(candidate: EvaluatedNanikiruCandidate): NanikiruCand
     scoreBreakdown: candidate.scoreBreakdown,
     reasons: candidate.reasons,
     estimate: candidate.estimate,
+    riichiJudgment: candidate.riichiJudgment,
   };
 }
 
@@ -175,7 +189,7 @@ function buildEstimateState(hand: readonly TileId[], context: NanikiruContext): 
   return {
     round: {
       bakaze: context.bakaze ?? "1z",
-      kyoku: 1,
+      kyoku: context.kyoku ?? 1,
       honba: context.honba ?? 0,
       riichiSticks: context.riichiSticks ?? 0,
       turn: context.turn ?? 8,

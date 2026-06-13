@@ -57,6 +57,7 @@ interface CliResult {
   };
   explanation: string;
   recommendedCandidate?: unknown;
+  riichiPlanDecision?: unknown;
   analysis?: unknown;
   estimate?: unknown;
 }
@@ -239,6 +240,7 @@ function toCliResult(decision: ReturnType<typeof chooseAction>, state: GameState
     mode: decision.mode,
     action: decision.action,
     explanation: decision.explanation,
+    riichiPlanDecision: decision.analysis.riichiPlanDecision,
     recommendedCandidate: best ? {
       discard: best.discard,
       shanten: best.shanten,
@@ -246,6 +248,7 @@ function toCliResult(decision: ReturnType<typeof chooseAction>, state: GameState
       score: best.score,
       scoreBreakdown: best.scoreBreakdown,
       reasons: best.reasons,
+      riichiJudgment: best.riichiJudgment,
     } : undefined,
   };
   if (options.includeEstimate) {

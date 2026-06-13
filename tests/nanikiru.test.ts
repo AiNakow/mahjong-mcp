@@ -135,6 +135,25 @@ test("analyzeNanikiru prefers cutting weak isolated taatsu over compressed pair 
   )));
 });
 
+test("analyzeNanikiru keeps outer 23 taatsu over middle taatsu in overloaded iishanten", () => {
+  const result = analyzeNanikiru({
+    text: "23567m45s67p789s77s",
+    verbose: true,
+  });
+
+  assert.equal(result.recommendation, "4s");
+  assert.ok(result.recommendedCandidate?.reasons.some((reason) => (
+    reason.type === "shape"
+    && String(reason.message).includes("搭子超载")
+  )));
+  const twoMan = result.candidates?.find((candidate) => candidate.discard === "2m");
+  assert.ok(twoMan?.reasons.some((reason) => (
+    reason.type === "shape"
+    && reason.polarity === "negative"
+    && String(reason.message).includes("预计最终听牌较好")
+  )));
+});
+
 test("analyzeNanikiru rejects invalid input", () => {
   assert.throws(
     () => analyzeNanikiru("这不是手牌"),

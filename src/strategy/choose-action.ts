@@ -3,7 +3,11 @@ import type { GameState } from "../core/state.ts";
 import { tilesToCounts34 } from "../core/counts.ts";
 import type { TileId } from "../core/tile.ts";
 import { analyzeHandText } from "../service/analyze.ts";
-import { evaluateNanikiru, type EvaluatedNanikiruAnalysis } from "./evaluate-nanikiru.ts";
+import {
+  applyRiichiPlanDecision,
+  evaluateNanikiru,
+  type EvaluatedNanikiruAnalysis,
+} from "./evaluate-nanikiru.ts";
 import {
   normalizeStrategyPolicy,
   type NanikiruPolicy,
@@ -72,6 +76,7 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
     enabled: options.useEvDecision ?? true,
     mode,
   });
+  applyRiichiPlanDecision(analysis);
   addPlacementReasons(analysis, placement);
 
   return {
@@ -149,6 +154,7 @@ function gameStateToNanikiruContext(state: GameState): NanikiruContext {
     calls: state.self.calls,
     seatWind: state.self.seatWind,
     bakaze: state.round.bakaze,
+    kyoku: state.round.kyoku,
     turn: state.round.turn,
     points: state.self.points,
     opponents: state.opponents.map((opponent) => ({
@@ -213,6 +219,19 @@ function renderDecisionExplanation(mode: StrategyMode, analysis: EvaluatedNaniki
   ];
   if (warnings.length > 0) {
     lines.push("注意：", ...warnings);
+  }
+  if (best.riichiJudgment) {
+    lines.push(
+      "立直判断：",
+      `- ${best.riichiJudgment.levelText}（${best.riichiJudgment.score}/100）。`,
+      ...best.riichiJudgment.reasons.slice(0, 3).map((reason) => `- ${reason}`),
+    );
+  }
+  if (analysis.riichiPlanDecision) {
+    lines.push(
+      "路线判断：",
+      ...analysis.riichiPlanDecision.reasons.map((reason) => `- ${reason}`),
+    );
   }
   return lines.join("\n");
 }

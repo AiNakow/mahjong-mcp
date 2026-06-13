@@ -124,7 +124,9 @@ function compareByEvProtection(a: CandidateWithEv, b: CandidateWithEv, mode: Str
   if (Math.abs(incomeDelta) >= DEFAULT_MIN_INCOME_DELTA && hasUsableConfidence(a, b)) {
     return incomeDelta > 0 ? -1 : 1;
   }
-  return b.originalScore - a.originalScore || b.candidate.totalWaits - a.candidate.totalWaits;
+  return b.candidate.score - a.candidate.score
+    || b.originalScore - a.originalScore
+    || b.candidate.totalWaits - a.candidate.totalWaits;
 }
 
 function compareRiskProtection(a: CandidateWithEv, b: CandidateWithEv): number {

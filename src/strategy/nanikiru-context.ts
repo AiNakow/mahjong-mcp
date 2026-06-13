@@ -17,6 +17,7 @@ export interface NanikiruContext {
   calls?: Call[];
   seatWind?: WindTile;
   bakaze?: WindTile;
+  kyoku?: number;
   turn?: number;
   points?: number;
   opponents?: OpponentContext[];

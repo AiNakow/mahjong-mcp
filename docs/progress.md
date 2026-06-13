@@ -130,3 +130,6 @@
 - 扩展 `NanikiruPolicy`，新增全带三色复合路线、同向听改良参数和 `normalizeStrategyPolicy()`；外部继续兼容 `Partial<NanikiruPolicy>`，内部可读取 `strategy.weights/routes/value/improvement/defense/arbitration` 分组。
 - 新增 `tests/strategy-refactor.test.ts`，覆盖 candidate feature、route portfolio、同向听改良独立计分和 policy 分组兼容；重构后 `npm run check` 与 `npm test` 均通过，当前测试总数为 98 个。
 - 更新 `docs/和牌率放铳率期望点局收支工具方案.md`：明确和率按最终听牌有效枚数估算，综合听牌种类、真实剩余枚数、听牌形和剩余巡目；听牌形权重保持克制，双碰按每种待牌最多 2 枚计算；放铳率新增通过筋组压缩模型，生张无筋中张会随全局/同色通过筋和巡目增加而提高风险。
+- 扩展 `evaluate-shape.ts` 的超载搭子判断：弱搭子价值不再只看当前进张，新增预计听牌质量和直接两面改良，覆盖 `23 > 45`、`35 > 79 > 12/89` 等无额外路线时的默认取舍。
+- 新增副露速度价值 `callability`：对子按三家可碰、吃牌按上家可吃估算，并结合出牌倾向、役确定性和路线有效性；役确定时幺九对子可因高碰出率获得较高速度加分。
+- 补充 `tests/evaluate-shape.test.ts`，覆盖搭子超载时优先拆 `12` 而非 `79`，以及有役路线下幺九对子/役牌对子可碰价值；同步更新 `docs/strategy-and-explanation.md`。

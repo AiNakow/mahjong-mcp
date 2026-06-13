@@ -9,6 +9,7 @@ import { evaluateDefense } from "./evaluators/evaluate-defense.ts";
 import { buildCandidateFeature } from "./features.ts";
 import { evaluateSameShantenImprovement } from "./improvement.ts";
 import { evaluateRoutePortfolio } from "./routes.ts";
+import { evaluateRiichiJudgment, type RiichiJudgment, type RiichiLevel } from "./riichi.ts";
 import type { NanikiruPolicy } from "./nanikiru-policy.ts";
 import { DEFAULT_NANIKIRU_POLICY, normalizeStrategyPolicy } from "./nanikiru-policy.ts";
 import type { NanikiruContext } from "./nanikiru-context.ts";
@@ -32,6 +33,20 @@ export interface EvaluatedNanikiruCandidate extends DiscardCandidate {
   scoreBreakdown: NanikiruScoreBreakdown;
   reasons: Reason[];
   estimate?: RoundEstimate;
+  riichiJudgment?: RiichiJudgment;
+}
+
+export type RiichiPlan = "none" | "dama_improvement" | "dama" | "riichi_now";
+
+export interface RiichiPlanDecision {
+  plan: RiichiPlan;
+  shouldRiichi: boolean;
+  score: number;
+  level: RiichiLevel;
+  levelText: string;
+  damaDiscard?: TileId;
+  riichiDiscard?: TileId;
+  reasons: string[];
 }
 
 export interface EvaluatedNanikiruAnalysis {
@@ -44,6 +59,7 @@ export interface EvaluatedNanikiruAnalysis {
   isAgari: boolean;
   candidates: EvaluatedNanikiruCandidate[];
   recommendation?: TileId;
+  riichiPlanDecision?: RiichiPlanDecision;
   raw?: DiscardAnalysis["raw"];
 }
 
@@ -58,8 +74,7 @@ export function evaluateNanikiru(
   const ordered = orderNanikiruCandidates(evaluated, analysis, normalizedPolicy, context, {
     isEarlyLowValueTenpaiImprovement,
   });
-
-  return {
+  const result: EvaluatedNanikiruAnalysis = {
     input: analysis.input,
     handText: analysis.handText,
     hand: analysis.hand,
@@ -71,6 +86,105 @@ export function evaluateNanikiru(
     recommendation: ordered[0]?.discard,
     raw: analysis.raw,
   };
+  applyRiichiPlanDecision(result);
+  return result;
+}
+
+export function applyRiichiPlanDecision(analysis: EvaluatedNanikiruAnalysis): void {
+  const riichiPlanDecision = chooseRiichiPlan(analysis.candidates);
+  analysis.riichiPlanDecision = riichiPlanDecision;
+  analysis.candidates.splice(0, analysis.candidates.length, ...applyRiichiPlanOrder(analysis.candidates, riichiPlanDecision));
+  analysis.recommendation = analysis.candidates[0]?.discard;
+}
+
+function chooseRiichiPlan(candidates: readonly EvaluatedNanikiruCandidate[]): RiichiPlanDecision | undefined {
+  const tenpaiCandidates = candidates.filter((candidate) => candidate.shanten === 0 && candidate.riichiJudgment?.canRiichi);
+  if (tenpaiCandidates.length === 0) {
+    return undefined;
+  }
+
+  const damaCandidate = tenpaiCandidates[0];
+  const riichiCandidate = [...tenpaiCandidates].sort((a, b) => (
+    getRiichiPlanScore(b) - getRiichiPlanScore(a)
+    || b.totalWaits - a.totalWaits
+    || b.goodShapeCount - a.goodShapeCount
+  ))[0];
+  if (!damaCandidate || !riichiCandidate?.riichiJudgment) {
+    return undefined;
+  }
+
+  const judgment = riichiCandidate.riichiJudgment;
+  const hasStrongImprovement = hasDamaImprovement(damaCandidate);
+  const shouldRiichi = judgment.shouldRiichi && judgment.score >= 30;
+  const plan: RiichiPlan = shouldRiichi
+    ? "riichi_now"
+    : hasStrongImprovement
+      ? "dama_improvement"
+      : "dama";
+  const reasons = shouldRiichi
+    ? [
+      `当前场况选择立即立直路线，切 ${riichiCandidate.discard} 的立直听牌综合评价最高。`,
+      ...(riichiCandidate.discard !== damaCandidate.discard
+        ? [`若不立直，切 ${damaCandidate.discard} 是更偏默听改良的路线。`]
+        : []),
+    ]
+    : [
+      hasStrongImprovement
+        ? `当前更适合切 ${damaCandidate.discard} 默听等改良。`
+        : `当前不需要立即立直，优先选择切 ${damaCandidate.discard} 保持听牌。`,
+      ...(riichiCandidate.discard !== damaCandidate.discard
+        ? [`如果必须立即立直，切 ${riichiCandidate.discard} 是更好的立直候选。`]
+        : []),
+    ];
+
+  return {
+    plan,
+    shouldRiichi,
+    score: judgment.score,
+    level: judgment.level,
+    levelText: judgment.levelText,
+    damaDiscard: damaCandidate.discard,
+    riichiDiscard: riichiCandidate.discard,
+    reasons,
+  };
+}
+
+function applyRiichiPlanOrder(
+  candidates: EvaluatedNanikiruCandidate[],
+  decision?: RiichiPlanDecision,
+): EvaluatedNanikiruCandidate[] {
+  if (!decision || decision.plan !== "riichi_now" || !decision.riichiDiscard) {
+    return candidates;
+  }
+  const selected = candidates.find((candidate) => candidate.discard === decision.riichiDiscard);
+  if (!selected) {
+    return candidates;
+  }
+  return [
+    selected,
+    ...candidates.filter((candidate) => candidate !== selected),
+  ];
+}
+
+function getRiichiPlanScore(candidate: EvaluatedNanikiruCandidate): number {
+  const judgment = candidate.riichiJudgment;
+  if (!judgment) {
+    return -Infinity;
+  }
+  const goodShapeRatio = candidate.totalWaits > 0 ? candidate.goodShapeCount / candidate.totalWaits : 0;
+  return judgment.score
+    + candidate.totalWaits * 12
+    + goodShapeRatio * 25
+    + judgment.details.riichiAveragePoints / 300;
+}
+
+function hasDamaImprovement(candidate: EvaluatedNanikiruCandidate): boolean {
+  const details = candidate.riichiJudgment?.details;
+  if (!details) {
+    return false;
+  }
+  return details.improvementTurnMultiplier > 0
+    && (details.shapeImprovementTiles >= 8 || details.valueImprovementTiles >= 8);
 }
 
 function evaluateCandidate(
@@ -170,6 +284,9 @@ function evaluateCandidate(
   });
   const improvementEvaluation = evaluateSameShantenImprovement(feature, policy, context);
   const defenseEvaluation = evaluateDefense(candidate.discard, context, afterDiscard);
+  const riichiJudgment = candidate.shanten === 0
+    ? evaluateRiichiJudgment(afterDiscard, candidate, context)
+    : undefined;
 
   const scoreBreakdown: NanikiruScoreBreakdown = {
     shanten: shantenScore,
@@ -197,6 +314,7 @@ function evaluateCandidate(
       ...improvementEvaluation.reasons,
       ...defenseEvaluation.reasons,
     ],
+    riichiJudgment,
   };
 }
 
