@@ -192,19 +192,31 @@ export function evaluateRiichiJudgment(
     score -= 20;
     reasons.push("听牌枚数偏少，立直后被锁手的代价较高。");
   }
-  if (
-    riichi.averagePoints <= 2600
-    && totalWaits <= 4
+  const shouldCheckImprovement = totalWaits <= 4
     && goodShapeRatio <= 0.2
     && remainingTurns >= 5
-  ) {
+    && (
+      riichi.averagePoints <= 2600
+      || ((context.turn ?? 8) <= 8 && totalWaits <= 4)
+    );
+  if (shouldCheckImprovement) {
     improvement = estimateTenpaiImprovement(handAfterDiscard, candidate, context, {
       currentDamaPoints: dama.averagePoints,
       currentRiichiPoints: riichi.averagePoints,
     });
-    if (improvement.improvementTiles >= 8) {
+    if (riichi.averagePoints <= 2600 && improvement.improvementTiles >= 8) {
       score -= Math.round(65 * improvementTurnMultiplier);
       reasons.push(formatImprovementReason(improvement, improvementTurnMultiplier));
+    } else if (improvement.shapeImprovementTiles >= 8) {
+      const highValuePenalty = calculateHighValueNarrowImprovementPenalty(
+        improvement,
+        riichi.averagePoints,
+        improvementTurnMultiplier,
+      );
+      if (highValuePenalty > 0) {
+        score -= highValuePenalty;
+        reasons.push(formatHighValueNarrowImprovementReason(improvement, highValuePenalty));
+      }
     }
   }
   if (pointGain >= 3900) {
@@ -811,6 +823,20 @@ function formatImprovementReason(improvement: ImprovementSummary, turnMultiplier
     return `${turnPrefix}低打点窄听仍有较多默听形状改良，立即立直的必要性明显下降。`;
   }
   return `${turnPrefix}低打点窄听仍有默听打点改良，立即立直的必要性下降。`;
+}
+
+function calculateHighValueNarrowImprovementPenalty(
+  improvement: ImprovementSummary,
+  riichiAveragePoints: number,
+  turnMultiplier: number,
+): number {
+  const shapePenalty = Math.min(110, 95 + Math.max(0, improvement.shapeImprovementTiles - 8) * 3);
+  const valueProtection = riichiAveragePoints >= 12000 ? 12 : riichiAveragePoints >= 8000 ? 6 : 0;
+  return Math.max(0, Math.round((shapePenalty - valueProtection) * turnMultiplier));
+}
+
+function formatHighValueNarrowImprovementReason(improvement: ImprovementSummary, penalty: number): string {
+  return `虽然当前立直打点较高，但早巡坏形窄听仍有 ${improvement.shapeImprovementTiles} 枚形状改良，和率提升空间明显，立即立直评价下调 ${penalty}。`;
 }
 
 function getImprovementTurnMultiplier(turn: number): number {

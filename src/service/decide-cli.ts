@@ -4,6 +4,7 @@ import { DEFAULT_RULE_CONFIG, type RuleConfig } from "../core/rules.ts";
 import type { Call, Discard, GameState, PlayerState } from "../core/state.ts";
 import { parseTileGroupsWithRed, parseTileId, type TileId, type WindTile } from "../core/tile.ts";
 import { buildVisibleTilesFromState, chooseAction } from "../strategy/choose-action.ts";
+import type { DecisionAction, DecisionPhase } from "../strategy/action-types.ts";
 import { estimateDiscardActions } from "./estimate.ts";
 import {
   nextValue,
@@ -46,15 +47,15 @@ interface CliOptions {
   doraIndicators?: TileId[];
   rules?: RuleConfig;
   akaDoraCount?: number;
+  lastDiscard?: TileId;
+  lastDiscardFrom?: RelativeOpponent;
   opponents: Record<RelativeOpponent, OpponentCliOptions>;
 }
 
 interface CliResult {
+  phase: DecisionPhase;
   mode: string;
-  action?: {
-    type: "discard";
-    tile: TileId;
-  };
+  action?: DecisionAction;
   explanation: string;
   recommendedCandidate?: unknown;
   riichiPlanDecision?: unknown;
@@ -101,6 +102,10 @@ function parseArgs(args: string[]): CliOptions {
       options.useEvDecision = false;
     } else if (arg === "--draw") {
       options.draw = parseTileId(nextValue(args, ++i, arg));
+    } else if (arg === "--last-discard") {
+      options.lastDiscard = parseTileId(nextValue(args, ++i, arg));
+    } else if (arg === "--last-discard-from") {
+      options.lastDiscardFrom = parseRelativeOpponent(nextValue(args, ++i, arg), arg);
     } else if (arg === "--call") {
       const parsed = parseCallWithRed(nextValue(args, ++i, arg));
       options.calls = [...(options.calls ?? []), parsed.call];
@@ -180,6 +185,9 @@ function buildStateFromOptions(options: CliOptions): GameState {
     opponents: (["left", "across", "right"] as const).map((relative) => buildOpponent(relative, selfSeat, options.opponents[relative])),
     doraIndicators: options.doraIndicators ?? [],
     lastDraw: options.draw,
+    lastDiscard: options.lastDiscard
+      ? { tile: options.lastDiscard, tsumogiri: false, playerIndex: getRelativePlayerIndex(options.lastDiscardFrom ?? "right") }
+      : undefined,
     rules: options.rules ?? DEFAULT_RULE_CONFIG,
   };
 
@@ -234,9 +242,27 @@ function getOpponentFromFlag(arg: string): RelativeOpponent {
   throw new Error(`未知对手方向参数：${arg}`);
 }
 
+function parseRelativeOpponent(value: string, flag: string): RelativeOpponent {
+  if (value === "left" || value === "across" || value === "right") {
+    return value;
+  }
+  throw new Error(`${flag} 只能是 left、across 或 right。`);
+}
+
+function getRelativePlayerIndex(relative: RelativeOpponent): number {
+  if (relative === "right") {
+    return 1;
+  }
+  if (relative === "across") {
+    return 2;
+  }
+  return 3;
+}
+
 function toCliResult(decision: ReturnType<typeof chooseAction>, state: GameState, options: CliOptions): CliResult {
   const best = decision.analysis.candidates[0];
   const result: CliResult = {
+    phase: decision.phase,
     mode: decision.mode,
     action: decision.action,
     explanation: decision.explanation,

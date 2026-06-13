@@ -51,12 +51,15 @@ export function evaluateValuePotential(
   },
 ): EvaluationPart {
   const nanikiruContext = context.context ?? {};
+  const tenpaiScoringRoute = evaluateTenpaiScoringRoute(afterDiscard, discard, policy, context);
+  const hasTenpaiScoringValue = context.shanten === 0 && tenpaiScoringRoute.score > 0;
   const staticRouteScores = (context.routePortfolio ?? evaluateRoutePortfolio(context.feature, policy, nanikiruContext))
     .routes
+    .filter((route) => context.shanten !== 0 || route.id === "dora" || hasTenpaiScoringValue)
     .map(toValueRouteScore);
 
   const routeScores = [
-    evaluateTenpaiScoringRoute(afterDiscard, discard, policy, context),
+    tenpaiScoringRoute,
     evaluateIishantenTwoLayerScoringRoute(afterDiscard, discard, policy, context),
     ...staticRouteScores,
   ].filter((route) => route.score > 0)

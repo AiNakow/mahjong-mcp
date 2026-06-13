@@ -1,7 +1,7 @@
 import type { GameState } from "../core/state.ts";
 import { estimateRound, type RoundEstimate } from "../ev/index.ts";
 import type { EvaluatedNanikiruAnalysis, EvaluatedNanikiruCandidate } from "./evaluate-nanikiru.ts";
-import type { StrategyMode } from "./choose-action.ts";
+import type { StrategyMode } from "./action-types.ts";
 
 export interface EvDecisionOptions {
   enabled?: boolean;

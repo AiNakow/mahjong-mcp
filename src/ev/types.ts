@@ -6,10 +6,12 @@ export type EstimateMode = "fast" | "balanced" | "deep";
 export type EstimateObjective = "point" | "placement";
 export type Confidence = "low" | "medium" | "high";
 
-export interface CandidateAction {
-  type: "discard" | "riichi-discard";
-  tile: TileId;
-}
+export type CandidateAction =
+  | { type: "discard"; tile: TileId }
+  | { type: "riichi-discard"; tile: TileId }
+  | { type: "call-discard"; callType: "chi" | "pon" | "minkan"; calledTile: TileId; tile: TileId }
+  | { type: "ankan"; tiles: TileId[] }
+  | { type: "kakan"; tiles: TileId[] };
 
 export interface EstimateAssumptions {
   remainingDraws?: number;

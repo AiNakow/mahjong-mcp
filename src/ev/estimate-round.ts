@@ -1,6 +1,7 @@
 import { analyzeTiles } from "../hand/paili.ts";
+import type { TileId } from "../core/tile.ts";
 import type { DiscardCandidate } from "../service/analyze.ts";
-import type { EstimateRoundInput, RoundEstimate } from "./types.ts";
+import type { CandidateAction, EstimateRoundInput, RoundEstimate } from "./types.ts";
 import { estimateDealInRateFast } from "./deal-in-rate.ts";
 import { estimateHandValueFast } from "./hand-value.ts";
 import { estimateOpponentsFast } from "./opponent-model.ts";
@@ -12,6 +13,10 @@ export function estimateRound(input: EstimateRoundInput): RoundEstimate {
   if (input.mode === "deep") {
     throw new Error("deep 模式尚未实现；当前只支持 fast/balanced 确定性估算。");
   }
+  const discardTile = getDiscardTile(input.action);
+  if (!discardTile) {
+    throw new Error("杠动作 EV 尚未实现；当前杠动作使用策略层启发式评分。");
+  }
 
   const candidate = input.candidate ?? findOrBuildCandidate(input);
   const remainingDraws = input.assumptions?.remainingDraws ?? estimateRemainingOwnDraws(input.state);
@@ -22,7 +27,7 @@ export function estimateRound(input: EstimateRoundInput): RoundEstimate {
     remainingDraws,
     unknownWallSize,
   });
-  const dealIn = estimateDealInRateFast(input.state, input.action.tile, {
+  const dealIn = estimateDealInRateFast(input.state, discardTile, {
     shanten: candidate.shanten,
     remainingDraws,
   });
@@ -60,14 +65,18 @@ export function estimateRound(input: EstimateRoundInput): RoundEstimate {
 }
 
 function findOrBuildCandidate(input: EstimateRoundInput): DiscardCandidate {
-  const matched = input.candidates?.find((candidate) => candidate.discard === input.action.tile);
+  const discardTile = getDiscardTile(input.action);
+  if (!discardTile) {
+    throw new Error("杠动作 EV 尚未实现；当前杠动作使用策略层启发式评分。");
+  }
+  const matched = input.candidates?.find((candidate) => candidate.discard === discardTile);
   if (matched) {
     return matched;
   }
   const hand = [...(input.state.self.hand ?? []), ...(input.state.lastDraw ? [input.state.lastDraw] : [])];
-  const discardIndex = hand.indexOf(input.action.tile);
+  const discardIndex = hand.indexOf(discardTile);
   if (discardIndex < 0) {
-    throw new Error(`行动 ${input.action.tile} 不在自家手牌中。`);
+    throw new Error(`行动 ${discardTile} 不在自家手牌中。`);
   }
   hand.splice(discardIndex, 1);
   const analysis = analyzeTiles(hand, input.state.self.calls.some((call) => call.type !== "ankan") ? 1 : 0, {
@@ -81,11 +90,15 @@ function findOrBuildCandidate(input: EstimateRoundInput): DiscardCandidate {
     ],
   });
   return {
-    discard: input.action.tile,
+    discard: discardTile,
     shanten: analysis.shanten,
     waits: analysis.draws,
     totalWaits: analysis.total_draws,
     goodShapeCount: analysis.good_shape_count,
     goodShapeDraws: analysis.good_shape_draws,
   };
+}
+
+function getDiscardTile(action: CandidateAction): TileId | undefined {
+  return "tile" in action ? action.tile : undefined;
 }

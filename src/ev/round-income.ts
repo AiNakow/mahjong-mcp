@@ -5,7 +5,7 @@ import { clampProbability } from "./wall-model.ts";
 
 export interface RoundIncomeInput {
   state: GameState;
-  actionType: "discard" | "riichi-discard";
+  actionType: "discard" | "riichi-discard" | "call-discard" | "ankan" | "kakan";
   winRate: ProbabilityEstimate;
   dealInRate: ProbabilityEstimate;
   handValue: HandValueDistribution;

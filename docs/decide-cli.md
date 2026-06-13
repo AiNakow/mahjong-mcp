@@ -1,6 +1,6 @@
 # decide CLI
 
-`decide` 是基于 `GameState` 的动作推荐 CLI。当前版本只支持自家摸牌后切牌决策，内部调用 `chooseAction(state)`。
+`decide` 是基于 `GameState` 的动作推荐 CLI，内部调用 `chooseAction(state)`。当前版本已接入统一动作入口，支持自家摸牌后的自摸、立直和切牌，也支持他家打牌后的荣和、吃、碰和不鸣。
 
 ## 用法
 
@@ -18,8 +18,9 @@ npm run decide -- --state examples/decide-state.example.json
 
 输出默认为 JSON，包含：
 
+- `phase`：`self_draw` / `opponent_discard` / `unknown`。
 - `mode`：`attack` / `balance` / `defense` / `push`。
-- `action`：当前推荐动作，目前只会是 `{ "type": "discard", "tile": "..." }`。
+- `action`：当前推荐动作，例如 `{ "type": "discard", "tile": "7s" }`、`{ "type": "riichi", "tile": "7p" }`、`{ "type": "pon", "calledTile": "5z", "tiles": ["5z", "5z", "5z"], "discard": "8m" }` 或 `{ "type": "pass" }`。
 - `explanation`：中文解释。
 - `recommendedCandidate`：推荐切牌的核心评分、分项和 reasons。
 
@@ -102,6 +103,8 @@ EV 分数来自 `expectedRoundIncome / 100` 的低权重折算。它不会覆盖
 自家参数：
 
 - `--draw <tile>`：自摸牌，例如 `5p`。
+- `--last-discard <tile>`：最近他家打出的牌，例如 `5z`。
+- `--last-discard-from <left|across|right>`：最近弃牌来源，默认 `right`。只有 `left` 来源可以吃。
 - `--call <type:tiles[:calledTile[:from]]>`：自家副露，可重复。
 - `--seat <wind>`：自风，默认 `1z`。
 - `--points <number>`：自家点数，默认 `25000`。

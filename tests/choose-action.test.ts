@@ -17,6 +17,238 @@ test("chooseAction keeps attack mode discard when there is no threat", () => {
   assert.equal(decision.analysis.recommendation, "7s");
 });
 
+test("chooseAction recommends tsumo before discard when self draw wins", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
+    { lastDraw: "4s" },
+  );
+  const decision = chooseAction(state);
+
+  assert.equal(decision.phase, "self_draw");
+  assert.deepEqual(decision.action, { type: "tsumo" });
+  assert.equal(decision.candidates[0].category, "agari");
+  assert.match(decision.explanation, /自摸/);
+});
+
+test("chooseAction recommends ron before pass when opponent discard wins", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
+    { lastDiscard: "4s", lastDiscardPlayerIndex: 1 },
+  );
+  const decision = chooseAction(state);
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "ron" });
+  assert.equal(decision.candidates[0].category, "agari");
+  assert.match(decision.explanation, /荣和/);
+});
+
+test("chooseAction does not recommend ron when basic furiten applies", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
+    { lastDiscard: "4s", lastDiscardPlayerIndex: 1, selfDiscards: ["4s"] },
+  );
+  const decision = chooseAction(state);
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "pass" });
+});
+
+test("chooseAction recommends yakuhai pon with follow-up discard", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "5p", "1s", "4s", "7m", "8m", "9p", "5z", "5z"],
+    { lastDiscard: "5z", lastDiscardPlayerIndex: 1, doraIndicators: ["7z"] },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.equal(decision.action?.type, "pon");
+  assert.equal(decision.action.type === "pon" ? decision.action.calledTile : undefined, "5z");
+  assert.ok(decision.action.type === "pon" && decision.action.discard);
+  assert.match(decision.explanation, /碰/);
+});
+
+test("chooseAction recommends high-shanten yakuhai pon when it improves speed", () => {
+  const state = makeState(
+    ["5z", "5z", "5s", "4p", "7s", "1m", "1s", "6m", "4z", "7z", "2p", "4s", "6s"],
+    { lastDiscard: "5z", lastDiscardPlayerIndex: 1 },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.equal(decision.action?.type, "pon");
+  assert.match(decision.explanation, /向听较高/);
+});
+
+test("chooseAction passes low-value yakuhai pon when far behind and menzen value is needed", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "5p", "1s", "4s", "7m", "8m", "9p", "5z", "5z"],
+    {
+      lastDiscard: "5z",
+      lastDiscardPlayerIndex: 1,
+      selfPoints: 12000,
+      opponentPoints: [40000, 28000, 20000],
+    },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "pass" });
+  assert.ok(decision.candidates.some((candidate) => (
+    candidate.category === "call"
+    && candidate.reasons.some((reason) => String(reason.message).includes("门清立直提升打点"))
+  )));
+});
+
+test("chooseAction passes yakuhai pon when menzen good tenpai is already available", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "5p", "2s", "3s", "4s", "7m", "8m", "5z", "5z"],
+    { lastDiscard: "5z", lastDiscardPlayerIndex: 1 },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "pass" });
+  assert.match(decision.explanation, /已经听牌/);
+  assert.match(decision.explanation, /门清立直/);
+});
+
+test("chooseAction recommends tanyao chi from left player", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "6p", "7p", "8p", "2s", "3s", "6s", "7s", "8s"],
+    { lastDiscard: "5p", lastDiscardPlayerIndex: 3 },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.equal(decision.action?.type, "chi");
+  assert.equal(decision.action.type === "chi" ? decision.action.calledTile : undefined, "5p");
+  assert.ok(decision.action.type === "chi" && decision.action.discard);
+});
+
+test("chooseAction passes guest wind pon without a clear yaku", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "5p", "2s", "3s", "4s", "7m", "8m", "2z", "2z"],
+    { lastDiscard: "2z", lastDiscardPlayerIndex: 1 },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "pass" });
+});
+
+test("chooseAction stays conservative on calls against riichi", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "5p", "2s", "3s", "4s", "7m", "8m", "5z", "5z"],
+    { lastDiscard: "5z", lastDiscardPlayerIndex: 1, opponentRiichi: true, opponentDiscards: ["1z", "9m"] },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "pass" });
+});
+
+test("chooseAction can recommend ankan when no one threatens and hand is ready", () => {
+  const state = makeState(
+    ["1m", "1m", "1m", "2m", "3m", "4m", "2p", "3p", "4p", "2s", "3s", "4s", "5s"],
+    { lastDraw: "1m", doraIndicators: ["9m"] },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "self_draw");
+  assert.equal(decision.action?.type, "ankan");
+  assert.deepEqual(decision.action.type === "ankan" ? decision.action.tiles : undefined, ["1m", "1m", "1m", "1m"]);
+  assert.match(decision.explanation, /暗杠/);
+});
+
+test("chooseAction does not recommend minkan against riichi", () => {
+  const state = makeState(
+    ["1m", "1m", "1m", "2m", "3m", "4m", "2p", "3p", "4p", "2s", "3s", "4s", "5s"],
+    { lastDiscard: "1m", lastDiscardPlayerIndex: 1, opponentRiichi: true, opponentDiscards: ["9m", "1z"] },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "opponent_discard");
+  assert.deepEqual(decision.action, { type: "pass" });
+  assert.ok(decision.candidates.some((candidate) => (
+    candidate.action.type === "minkan"
+    && candidate.warnings.some((warning) => String(warning.message).includes("新宝牌风险"))
+  )));
+});
+
+test("chooseAction does not recommend kakan when leading near final", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "2p", "3p", "4p", "2s", "3s", "4s", "7z"],
+    {
+      lastDraw: "5s",
+      calls: [{ type: "pon", tiles: ["7z", "7z", "7z"], calledTile: "7z", from: "right" }],
+      selfPoints: 45000,
+      opponentPoints: [30000, 15000, 10000],
+      bakaze: "2z",
+      kyoku: 4,
+    },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.equal(decision.phase, "self_draw");
+  assert.notEqual(decision.action?.type, "kakan");
+  assert.ok(decision.candidates.some((candidate) => (
+    candidate.action.type === "kakan"
+    && candidate.warnings.some((warning) => String(warning.message).includes("终局附近"))
+  )));
+});
+
+test("chooseAction upgrades a strong tenpai discard into a riichi action", () => {
+  const state = makeState(["1m", "2m", "3m", "1p", "2p", "3p", "1s", "2s", "3s", "4s", "5s", "6s", "7p", "7p"]);
+  const decision = chooseAction(state);
+
+  assert.equal(decision.action?.type, "riichi");
+  assert.equal(decision.candidates[0].category, "riichi");
+  assert.match(decision.explanation, /立直/);
+});
+
+test("chooseAction keeps discard when riichi judgment discourages riichi", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "2p", "3p", "4p", "2s", "3s", "4s", "5m", "5m", "6p", "7p", "7z"],
+    {
+      turn: 10,
+      bakaze: "2z",
+      kyoku: 4,
+      selfSeatWind: "2z",
+      selfPoints: 50000,
+      opponentPoints: [30000, 15000, 5000],
+      doraIndicators: ["4m", "4p"],
+    },
+  );
+  const decision = chooseAction(state);
+
+  assert.equal(decision.action?.type, "discard");
+  assert.equal(decision.candidates[0].category, "discard");
+});
+
+test("chooseAction prefers early improvement over high-value bad-shape narrow riichi", () => {
+  const state = makeState(
+    ["3m", "5m", "1p", "2p", "3p", "4p", "5p", "6p", "7p", "8p", "9p", "1s", "1s", "1s"],
+    {
+      turn: 6,
+      doraIndicators: ["9s"],
+      bakaze: "1z",
+      selfSeatWind: "1z",
+    },
+  );
+  const decision = chooseAction(state);
+
+  assert.deepEqual(decision.action, { type: "discard", tile: "5m" });
+  assert.equal(decision.analysis.riichiPlanDecision?.plan, "dama_improvement");
+  assert.equal(decision.analysis.candidates[0]?.riichiJudgment?.shouldRiichi, false);
+  assert.ok((decision.analysis.candidates[0]?.riichiJudgment?.details.shapeImprovementTiles ?? 0) >= 8);
+  assert.doesNotMatch(decision.explanation, /全带/);
+  assert.equal(decision.analysis.candidates[0]?.reasons.some((reason) => (
+    reason.type === "route"
+    && String(reason.message).includes("全带")
+  )), false);
+});
+
 test("chooseAction does not prefer breaking dora-side taatsu by stepping back from iishanten", () => {
   const state = makeState(
     ["3m", "4m", "5m", "6m", "7m", "7m", "3p", "4p", "4p", "5p", "6p", "8p", "3s", "5s"],
@@ -466,21 +698,26 @@ function makeState(hand: TileId[], options: {
   doraIndicators?: TileId[];
   selfPoints?: number;
   opponentPoints?: [number, number, number];
+  selfDiscards?: TileId[];
   selfSeatWind?: "1z" | "2z" | "3z" | "4z";
   opponentSeatWinds?: ["1z" | "2z" | "3z" | "4z", "1z" | "2z" | "3z" | "4z", "1z" | "2z" | "3z" | "4z"];
   bakaze?: "1z" | "2z" | "3z" | "4z";
   kyoku?: number;
   turn?: number;
+  lastDraw?: TileId;
+  lastDiscard?: TileId;
+  lastDiscardPlayerIndex?: number;
+  calls?: PlayerState["calls"];
 } = {}): GameState {
   const self: PlayerState = {
     seatWind: options.selfSeatWind ?? "1z",
     points: options.selfPoints ?? 25000,
     hand,
-    calls: [],
-    discards: [],
+    calls: options.calls ?? [],
+    discards: (options.selfDiscards ?? []).map((tile) => ({ tile, tsumogiri: false })),
     riichi: false,
     ippatsu: false,
-    menzen: true,
+    menzen: (options.calls ?? []).every((call) => call.type === "ankan"),
   };
   const opponents: PlayerState[] = [
     {
@@ -506,6 +743,10 @@ function makeState(hand: TileId[], options: {
     self,
     opponents,
     doraIndicators: options.doraIndicators ?? [],
+    lastDraw: options.lastDraw,
+    lastDiscard: options.lastDiscard
+      ? { tile: options.lastDiscard, tsumogiri: false, playerIndex: options.lastDiscardPlayerIndex ?? 1 }
+      : undefined,
     rules: DEFAULT_RULE_CONFIG,
   };
 

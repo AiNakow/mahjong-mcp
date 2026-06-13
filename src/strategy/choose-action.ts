@@ -21,18 +21,25 @@ import {
   type PlacementAdjustment,
 } from "./placement.ts";
 import { applyEvDecision } from "./ev-decision.ts";
-
-export type StrategyMode = "attack" | "balance" | "defense" | "push";
-
-export interface DecisionAction {
-  type: "discard";
-  tile: TileId;
-}
+import {
+  type DecisionAction,
+  type DecisionPhase,
+  type EvaluatedAction,
+  type StrategyMode,
+} from "./action-types.ts";
+import { arbitrateActions, compareEvaluatedActions } from "./action-arbitration.ts";
+import { discardAnalysisToActions, riichiAnalysisToActions } from "./evaluate-action.ts";
+import { determineDecisionPhase, generateLegalActions } from "./legal-actions.ts";
+import { evaluateAgariActions } from "./agari-evaluation.ts";
+import { evaluateCallActions } from "./call-evaluation.ts";
+import { evaluateKanActions } from "./kan-evaluation.ts";
 
 export interface ActionDecision {
+  phase: DecisionPhase;
   mode: StrategyMode;
   action?: DecisionAction;
   analysis: EvaluatedNanikiruAnalysis;
+  candidates: EvaluatedAction[];
   explanation: string;
 }
 
@@ -42,6 +49,63 @@ export interface ChooseActionOptions {
 }
 
 export function chooseAction(state: GameState, options: ChooseActionOptions = {}): ActionDecision {
+  const phase = determineDecisionPhase(state);
+  const legalActions = generateLegalActions(state);
+  const agariCandidates = evaluateAgariActions(state, phase);
+  const discardDecision = canEvaluateDiscardDecision(state)
+    ? evaluateDiscardDecision(state, options)
+    : undefined;
+  const analysis = discardDecision?.analysis ?? createEmptyAnalysis(getSelfHandForDiscard(state));
+  const discardCandidates = discardDecision?.candidates ?? [];
+  const riichiCandidates = discardDecision
+    ? riichiAnalysisToActions(discardDecision.analysis, phase, state)
+    : [];
+  const callCandidates = evaluateCallActions(state, phase, options);
+  const kanCandidates = evaluateKanActions(state, phase);
+  const passCandidates = legalActions
+    .filter((item) => item.action.type === "pass")
+    .map((item) => evaluatePassAction(state, item.phase, callCandidates));
+  const candidates = [
+    ...agariCandidates,
+    ...riichiCandidates,
+    ...discardCandidates,
+    ...callCandidates,
+    ...kanCandidates,
+    ...passCandidates,
+  ];
+  const sortedCandidates = [...candidates].sort(compareEvaluatedActions);
+  const selected = arbitrateActions(sortedCandidates);
+  const mode = discardDecision?.mode ?? "attack";
+
+  return {
+    phase,
+    mode,
+    action: selected?.action,
+    analysis,
+    candidates: sortedCandidates,
+    explanation: selected?.category === "agari"
+      ? renderAgariDecisionExplanation(selected)
+      : selected?.category === "riichi"
+        ? renderRiichiDecisionExplanation(selected)
+      : selected?.category === "call"
+        ? renderCallDecisionExplanation(selected)
+      : selected?.category === "kan"
+        ? renderKanDecisionExplanation(selected)
+      : selected?.category === "pass"
+        ? renderPassDecisionExplanation(selected)
+      : renderDecisionExplanation(mode, analysis, discardDecision?.highValueHand ?? false),
+  };
+}
+
+export interface DiscardDecisionEvaluation {
+  mode: StrategyMode;
+  analysis: EvaluatedNanikiruAnalysis;
+  candidates: EvaluatedAction[];
+  highValueHand: boolean;
+}
+
+export function evaluateDiscardDecision(state: GameState, options: ChooseActionOptions = {}): DiscardDecisionEvaluation {
+  const phase = determineDecisionPhase(state);
   const hand = getSelfHandForDiscard(state);
   const context = gameStateToNanikiruContext(state);
   const basePolicy = normalizeStrategyPolicy(options.policy);
@@ -81,9 +145,9 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
 
   return {
     mode,
-    action: analysis.recommendation ? { type: "discard", tile: analysis.recommendation } : undefined,
     analysis,
-    explanation: renderDecisionExplanation(mode, analysis, highValueHand),
+    candidates: discardAnalysisToActions(analysis, phase),
+    highValueHand,
   };
 }
 
@@ -181,6 +245,23 @@ function getSelfHandForDiscard(state: GameState): TileId[] {
   ];
 }
 
+function canEvaluateDiscardDecision(state: GameState): boolean {
+  return getSelfHandForDiscard(state).length % 3 === 2;
+}
+
+function createEmptyAnalysis(hand: TileId[]): EvaluatedNanikiruAnalysis {
+  return {
+    input: hand.join(""),
+    handText: hand.join(""),
+    hand,
+    tileCount: hand.length,
+    shanten: 99,
+    isTenpai: false,
+    isAgari: false,
+    candidates: [],
+  };
+}
+
 function hasOpenCall(state: GameState): boolean {
   return state.self.calls.some((call) => call.type !== "ankan");
 }
@@ -236,10 +317,223 @@ function renderDecisionExplanation(mode: StrategyMode, analysis: EvaluatedNaniki
   return lines.join("\n");
 }
 
-export function buildVisibleTilesFromState(state: Pick<GameState, "self" | "opponents" | "doraIndicators" | "lastDraw">): number[] {
+function renderAgariDecisionExplanation(candidate: EvaluatedAction): string {
+  const reason = candidate.reasons[0]?.message ?? "和牌成立。";
+  return [
+    `推荐：${candidate.action.type === "tsumo" ? "自摸" : "荣和"}。`,
+    "理由：",
+    `- ${reason}`,
+  ].join("\n");
+}
+
+function renderRiichiDecisionExplanation(candidate: EvaluatedAction): string {
+  const tile = candidate.action.type === "riichi" ? candidate.action.tile : undefined;
+  const riichiReason = candidate.reasons.find((reason) => reason.type === "riichi");
+  const reasons = normalizeReasonPriorities(candidate.reasons)
+    .filter((reason) => reason.polarity !== "negative")
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 4)
+    .map((reason) => `- ${reason.message}`);
+  return [
+    `推荐：切 ${tile} 立直。`,
+    "理由：",
+    ...(riichiReason ? [`- ${riichiReason.message}`] : []),
+    ...reasons.filter((line) => line !== `- ${riichiReason?.message}`),
+  ].join("\n");
+}
+
+function renderCallDecisionExplanation(candidate: EvaluatedAction): string {
+  const action = candidate.action;
+  if (action.type !== "chi" && action.type !== "pon" && action.type !== "minkan") {
+    return "推荐：副露。";
+  }
+  const callText = action.type === "pon" ? "碰" : action.type === "chi" ? "吃" : "大明杠";
+  const reasons = normalizeReasonPriorities(candidate.reasons)
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 4)
+    .map((reason) => `- ${reason.message}`);
+  return [
+    `推荐：${callText} ${action.calledTile} 后切 ${action.discard}。`,
+    "理由：",
+    ...reasons,
+  ].join("\n");
+}
+
+function renderKanDecisionExplanation(candidate: EvaluatedAction): string {
+  const action = candidate.action;
+  if (action.type !== "ankan" && action.type !== "kakan" && action.type !== "minkan") {
+    return "推荐：杠。";
+  }
+  const kanText = action.type === "ankan" ? "暗杠" : action.type === "kakan" ? "加杠" : "大明杠";
+  const tile = action.tiles[0];
+  const reasons = normalizeReasonPriorities(candidate.reasons)
+    .sort((a, b) => b.priority - a.priority)
+    .slice(0, 4)
+    .map((reason) => `- ${reason.message}`);
+  return [
+    `推荐：${kanText} ${tile}。`,
+    "理由：",
+    ...reasons,
+  ].join("\n");
+}
+
+function renderPassDecisionExplanation(candidate: EvaluatedAction): string {
+  const reasons = candidate.reasons
+    .slice(0, 4)
+    .map((reason) => `- ${reason.message}`);
+  return [
+    "推荐：不鸣。",
+    "理由：",
+    ...reasons,
+  ].join("\n");
+}
+
+function evaluatePassAction(
+  state: GameState,
+  phase: DecisionPhase,
+  callCandidates: readonly EvaluatedAction[],
+): EvaluatedAction {
+  const passEvaluation = evaluatePassBaseline(state);
+  return {
+    action: { type: "pass" },
+    phase,
+    legal: true,
+    score: getPassScore(state, callCandidates, passEvaluation.score),
+    priority: passEvaluation.priority,
+    category: "pass",
+    scoreBreakdown: {
+      speed: passEvaluation.speed,
+      value: passEvaluation.value,
+    },
+    reasons: passEvaluation.reasons,
+    warnings: [],
+  };
+}
+
+function getPassScore(state: GameState, callCandidates: readonly EvaluatedAction[], baselineScore: number): number {
+  if (!state.lastDiscard) {
+    return baselineScore;
+  }
+  const bestCall = callCandidates
+    .filter((candidate) => candidate.legal)
+    .sort((a, b) => b.score - a.score)[0];
+  const threatPenalty = state.opponents.some((opponent) => opponent.riichi) ? 260 : 0;
+  if (!bestCall) {
+    return baselineScore + threatPenalty;
+  }
+  const callGuardScore = bestCall.score < 180 ? bestCall.score + 80 : 0;
+  return Math.max(baselineScore, callGuardScore) + threatPenalty;
+}
+
+function evaluatePassBaseline(state: GameState): {
+  score: number;
+  priority: number;
+  speed: number;
+  value: number;
+  reasons: EvaluatedAction["reasons"];
+} {
+  let analysis: ReturnType<typeof analyzeHandText> | undefined;
+  try {
+    analysis = analyzeHandText({
+      text: (state.self.hand ?? []).join(""),
+      mode: hasOpenCall(state) ? 1 : 0,
+      includeRaw: false,
+      unavailableTiles: [
+        ...state.doraIndicators,
+        ...state.self.calls.flatMap((call) => call.tiles),
+        ...state.opponents.flatMap((opponent) => [
+          ...opponent.calls.flatMap((call) => call.tiles),
+          ...opponent.discards.map((discard) => discard.tile),
+        ]),
+        ...(state.lastDiscard ? [state.lastDiscard.tile] : []),
+      ],
+    });
+  } catch {
+    analysis = undefined;
+  }
+
+  if (analysis?.kind !== "draw") {
+    return {
+      score: 160,
+      priority: 0,
+      speed: 0,
+      value: 0,
+      reasons: [{
+        type: "rule",
+        polarity: "neutral",
+        priority: 10,
+        message: "不鸣，保留当前手牌结构。",
+      }],
+    };
+  }
+
+  if (analysis.shanten <= 0) {
+    const menzenBonus = state.self.menzen ? 520 : 0;
+    const waitScore = analysis.totalDraws * 28 + analysis.goodShapeCount * 45;
+    return {
+      score: 1180 + menzenBonus + waitScore,
+      priority: 60,
+      speed: waitScore,
+      value: menzenBonus,
+      reasons: [{
+        type: "rule",
+        polarity: "positive",
+        priority: 86,
+        message: `不鸣：当前已经听牌，保留 ${analysis.totalDraws} 枚待牌${state.self.menzen ? "和门清立直价值" : ""}。`,
+        data: {
+          shanten: analysis.shanten,
+          totalDraws: analysis.totalDraws,
+          goodShapeCount: analysis.goodShapeCount,
+          menzen: state.self.menzen,
+        },
+      }],
+    };
+  }
+
+  if (analysis.shanten === 1) {
+    const speedScore = analysis.totalDraws * 10 + analysis.goodShapeCount * 22;
+    const menzenBonus = state.self.menzen ? 180 : 0;
+    return {
+      score: 260 + speedScore + menzenBonus,
+      priority: 20,
+      speed: speedScore,
+      value: menzenBonus,
+      reasons: [{
+        type: "rule",
+        polarity: "neutral",
+        priority: 54,
+        message: `不鸣：当前一向听，保留 ${analysis.totalDraws} 枚进张${state.self.menzen ? "和门清路线" : ""}。`,
+        data: {
+          shanten: analysis.shanten,
+          totalDraws: analysis.totalDraws,
+          goodShapeCount: analysis.goodShapeCount,
+          menzen: state.self.menzen,
+        },
+      }],
+    };
+  }
+
+  return {
+    score: 120,
+    priority: 0,
+    speed: 0,
+    value: 0,
+    reasons: [{
+      type: "rule",
+      polarity: "neutral",
+      priority: 10,
+      message: "不鸣，保留当前手牌结构。",
+    }],
+  };
+}
+
+export function buildVisibleTilesFromState(
+  state: Pick<GameState, "self" | "opponents" | "doraIndicators" | "lastDraw"> & Pick<Partial<GameState>, "lastDiscard">,
+): number[] {
   return tilesToCounts34([
     ...(state.self.hand ?? []),
     ...(state.lastDraw ? [state.lastDraw] : []),
+    ...(state.lastDiscard ? [state.lastDiscard.tile] : []),
     ...state.self.calls.flatMap((call) => call.tiles),
     ...state.self.discards.map((discard) => discard.tile),
     ...state.opponents.flatMap((opponent) => [

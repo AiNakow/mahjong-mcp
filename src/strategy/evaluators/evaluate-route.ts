@@ -36,7 +36,7 @@ export function evaluateRouteCoherence(
 
   for (const route of after) {
     const previous = before.find((item) => item.route === route.route)?.strength ?? 0;
-    if (route.strength >= 0.75) {
+    if (afterFeature.shanten > 0 && route.strength >= 0.75) {
       const routeScore = Math.round(route.strength * policy.routeCommitmentBonus);
       score += routeScore;
       reasons.push({
@@ -55,6 +55,8 @@ export function evaluateRouteCoherence(
 
     const improvement = route.strength - previous;
     if (
+      afterFeature.shanten > 0
+      &&
       improvement >= 0.25
       && !isWeakTanyaoAroundDoraYakuhaiPair(route, afterPortfolio)
     ) {

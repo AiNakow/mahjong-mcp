@@ -11,6 +11,7 @@ export type ReasonType =
   | "riichi"
   | "placement"
   | "ev"
+  | "agari"
   | "risk"
   | "rule";
 
