@@ -8,36 +8,39 @@ import { estimateOpponentsFast } from "./opponent-model.ts";
 import { estimateRoundIncome } from "./round-income.ts";
 import { estimateWinRateFast } from "./win-rate.ts";
 import { estimateRemainingOwnDraws, estimateUnknownWallSize } from "./wall-model.ts";
+import type { ProbabilityEstimate } from "./types.ts";
 
 export function estimateRound(input: EstimateRoundInput): RoundEstimate {
   if (input.mode === "deep") {
     throw new Error("deep 模式尚未实现；当前只支持 fast/balanced 确定性估算。");
   }
   const discardTile = getDiscardTile(input.action);
-  if (!discardTile) {
-    throw new Error("杠动作 EV 尚未实现；当前杠动作使用策略层启发式评分。");
-  }
-
-  const candidate = input.candidate ?? findOrBuildCandidate(input);
+  const candidate = input.candidate ?? (discardTile ? findOrBuildCandidate(input) : buildKanCandidate(input));
   const remainingDraws = input.assumptions?.remainingDraws ?? estimateRemainingOwnDraws(input.state);
   const unknownWallSize = input.assumptions?.unknownWallSize ?? estimateUnknownWallSize(input.state);
-  const winRate = estimateWinRateFast({
+  const winRate = adjustKanWinRate(estimateWinRateFast({
     state: input.state,
     candidate,
     remainingDraws,
     unknownWallSize,
-  });
-  const dealIn = estimateDealInRateFast(input.state, discardTile, {
-    shanten: candidate.shanten,
-    remainingDraws,
-  });
+  }), input.action.type);
+  const dealIn = discardTile
+    ? estimateDealInRateFast(input.state, discardTile, {
+      shanten: candidate.shanten,
+      remainingDraws,
+    }).combinedPushRate
+    : {
+      value: input.action.type === "minkan" ? 0.012 : input.action.type === "kakan" ? 0.006 : 0,
+      confidence: "low" as const,
+      reasons: ["杠动作本身不切牌，快速 EV 仅计入抢杠/开新宝牌的粗略风险。"],
+    };
   const handValue = estimateHandValueFast(input.state, candidate);
   const opponents = estimateOpponentsFast(input.state);
   const income = estimateRoundIncome({
     state: input.state,
     actionType: input.action.type,
     winRate,
-    dealInRate: dealIn.combinedPushRate,
+    dealInRate: dealIn,
     handValue,
     opponents,
     isTenpai: candidate.shanten <= 0,
@@ -45,12 +48,13 @@ export function estimateRound(input: EstimateRoundInput): RoundEstimate {
   const warnings = [
     "快速模式为启发式估算，不等同于完整四人博弈搜索。",
     ...(candidate.shanten >= 2 ? ["二向听以上打点和和率置信度较低。"] : []),
+    ...(!discardTile ? ["杠动作 EV 使用岭上补一摸和新宝牌风险近似，尚非完整杠后搜索。"] : []),
   ];
 
   return {
     action: input.action,
     winRate,
-    dealInRate: dealIn.combinedPushRate,
+    dealInRate: dealIn,
     expectedAgariPoints: income.expectedAgariPoints,
     expectedRoundIncome: income.expectedRoundIncome,
     breakdown: income.breakdown,
@@ -67,7 +71,7 @@ export function estimateRound(input: EstimateRoundInput): RoundEstimate {
 function findOrBuildCandidate(input: EstimateRoundInput): DiscardCandidate {
   const discardTile = getDiscardTile(input.action);
   if (!discardTile) {
-    throw new Error("杠动作 EV 尚未实现；当前杠动作使用策略层启发式评分。");
+    return buildKanCandidate(input);
   }
   const matched = input.candidates?.find((candidate) => candidate.discard === discardTile);
   if (matched) {
@@ -96,6 +100,48 @@ function findOrBuildCandidate(input: EstimateRoundInput): DiscardCandidate {
     totalWaits: analysis.total_draws,
     goodShapeCount: analysis.good_shape_count,
     goodShapeDraws: analysis.good_shape_draws,
+  };
+}
+
+function buildKanCandidate(input: EstimateRoundInput): DiscardCandidate {
+  const hand = [...(input.state.self.hand ?? []), ...(input.state.lastDraw ? [input.state.lastDraw] : [])];
+  const analysis = analyzeTiles(hand, input.state.self.calls.some((call) => call.type !== "ankan") ? 1 : 0, {
+    unavailableTiles: [
+      ...input.state.doraIndicators,
+      ...input.state.self.calls.flatMap((call) => call.tiles),
+      ...input.state.opponents.flatMap((opponent) => [
+        ...opponent.calls.flatMap((call) => call.tiles),
+        ...opponent.discards.map((discard) => discard.tile),
+      ]),
+    ],
+  });
+  const waits = analysis.draws;
+  if (!("tiles" in input.action)) {
+    throw new Error("杠动作缺少 tiles。");
+  }
+  const tile = input.action.tiles[0];
+  return {
+    discard: tile,
+    shanten: analysis.shanten,
+    waits,
+    totalWaits: analysis.total_draws,
+    goodShapeCount: analysis.good_shape_count,
+    goodShapeDraws: analysis.good_shape_draws,
+  };
+}
+
+function adjustKanWinRate(estimate: ProbabilityEstimate, actionType: CandidateAction["type"]): ProbabilityEstimate {
+  if (actionType !== "ankan" && actionType !== "kakan" && actionType !== "minkan") {
+    return estimate;
+  }
+  return {
+    ...estimate,
+    value: Math.min(0.95, estimate.value * 1.08 + 0.006),
+    confidence: estimate.confidence === "high" ? "medium" : estimate.confidence,
+    reasons: [
+      ...estimate.reasons,
+      "杠后可获得岭上补一摸，快速估算小幅上调自家和牌率。",
+    ],
   };
 }
 

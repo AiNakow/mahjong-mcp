@@ -9,6 +9,9 @@
     "decide": "node src/service/decide-cli.ts",
     "estimate": "node src/service/estimate-cli.ts",
     "test": "node --test tests/**/*.test.ts",
+    "test:fast": "node --test tests/agari-evaluation.test.ts tests/analyze.test.ts tests/apply-action.test.ts tests/evaluate-action.test.ts tests/evaluate-shape.test.ts tests/ev-deal-in-rate.test.ts tests/ev-decision.test.ts tests/ev-round-income.test.ts tests/ev-win-rate.test.ts tests/legal-actions.test.ts tests/paili.test.ts tests/score-hand.test.ts tests/scoring-golden.test.ts tests/scoring.test.ts",
+    "test:slow": "node --test tests/choose-action.test.ts tests/call-evaluation.test.ts tests/evaluate-nanikiru.test.ts tests/evaluate-value.test.ts tests/nanikiru.test.ts tests/riichi.test.ts tests/strategy-refactor.test.ts",
+    "test:actions": "node --test tests/legal-actions.test.ts tests/agari-evaluation.test.ts tests/apply-action.test.ts tests/evaluate-action.test.ts",
     "nanikiru": "node src/service/nanikiru-cli.ts",
     "paili": "node src/hand/paili-cli.ts",
     "score": "node src/service/score-hand-cli.ts"

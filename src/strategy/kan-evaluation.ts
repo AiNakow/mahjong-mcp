@@ -2,6 +2,7 @@ import type { Call, GameState } from "../core/state.ts";
 import { type TileId } from "../core/tile.ts";
 import { analyzeHandText } from "../service/analyze.ts";
 import type { DecisionAction, DecisionPhase, EvaluatedAction } from "./action-types.ts";
+import type { LegalAction } from "./legal-actions.ts";
 import type { Reason } from "./reason.ts";
 
 type KanType = "ankan" | "kakan" | "minkan";
@@ -18,7 +19,20 @@ interface ShantenSnapshot {
   goodShapeCount: number;
 }
 
-export function evaluateKanActions(state: GameState, phase: DecisionPhase): EvaluatedAction[] {
+export function evaluateKanActions(
+  state: GameState,
+  phase: DecisionPhase,
+  legalActions?: readonly LegalAction[],
+): EvaluatedAction[] {
+  if (legalActions) {
+    const patterns = kanPatternsFromLegalActions(legalActions);
+    if (state.self.riichi && patterns.some((pattern) => pattern.type !== "ankan")) {
+      return patterns
+        .filter((pattern) => pattern.type === "ankan")
+        .map((pattern) => evaluateKanPattern(state, phase, pattern));
+    }
+    return patterns.map((pattern) => evaluateKanPattern(state, phase, pattern));
+  }
   if (state.self.riichi) {
     return [];
   }
@@ -32,6 +46,20 @@ export function evaluateKanActions(state: GameState, phase: DecisionPhase): Eval
     return generateMinkanPatterns(state).map((pattern) => evaluateKanPattern(state, phase, pattern));
   }
   return [];
+}
+
+function kanPatternsFromLegalActions(actions: readonly LegalAction[]): KanPattern[] {
+  return actions.flatMap((item) => {
+    const action = item.action;
+    if (action.type !== "ankan" && action.type !== "kakan" && action.type !== "minkan") {
+      return [];
+    }
+    return [{
+      type: action.type,
+      tiles: action.tiles,
+      calledTile: action.type === "minkan" ? action.calledTile : undefined,
+    }];
+  });
 }
 
 function evaluateKanPattern(state: GameState, phase: DecisionPhase, pattern: KanPattern): EvaluatedAction {

@@ -1,17 +1,32 @@
 import type { GameState } from "../core/state.ts";
 import type { TileId } from "../core/tile.ts";
 import { calculateAgariScore, type AgariScoreResult, type ScoreCandidate } from "../scoring/index.ts";
+import { analyzeHandText } from "../service/analyze.ts";
 import type { DecisionPhase, EvaluatedAction } from "./action-types.ts";
+import type { LegalAction } from "./legal-actions.ts";
 import type { Reason } from "./reason.ts";
 
-export function evaluateAgariActions(state: GameState, phase: DecisionPhase): EvaluatedAction[] {
-  if (phase === "self_draw") {
+export function evaluateAgariActions(
+  state: GameState,
+  phase: DecisionPhase,
+  legalActions?: readonly LegalAction[],
+): EvaluatedAction[] {
+  if ((phase === "self_draw" || phase === "rinshan_draw") && hasLegalAction(legalActions, "tsumo")) {
     return evaluateTsumoAction(state, phase);
   }
-  if (phase === "opponent_discard") {
+  if ((phase === "opponent_discard" || phase === "chankan") && hasLegalAction(legalActions, "ron")) {
     return evaluateRonAction(state, phase);
   }
   return [];
+}
+
+function hasLegalAction(
+  legalActions: readonly LegalAction[] | undefined,
+  type: "tsumo" | "ron",
+): boolean {
+  return legalActions
+    ? legalActions.some((item) => item.action.type === type)
+    : true;
 }
 
 function evaluateTsumoAction(state: GameState, phase: DecisionPhase): EvaluatedAction[] {
@@ -30,6 +45,7 @@ function evaluateTsumoAction(state: GameState, phase: DecisionPhase): EvaluatedA
     rules: state.rules,
     riichi: state.self.riichi,
     ippatsu: state.self.ippatsu,
+    rinshan: phase === "rinshan_draw",
     doraIndicators: state.doraIndicators,
   });
   if (result.status !== "scored" || !result.best) {
@@ -40,12 +56,21 @@ function evaluateTsumoAction(state: GameState, phase: DecisionPhase): EvaluatedA
 
 function evaluateRonAction(state: GameState, phase: DecisionPhase): EvaluatedAction[] {
   const discard = state.lastDiscard;
-  if (!discard || discard.playerIndex === 0 || isBasicFuriten(state, discard.tile)) {
+  const chankanTile = phase === "chankan" ? state.lastKan?.tile : undefined;
+  if (
+    (!discard && !chankanTile)
+    || (discard?.playerIndex === 0)
+    || (phase === "chankan" && state.lastKan?.playerIndex === 0)
+    || state.temporaryFuriten
+    || state.riichiFuriten
+    || isBasicFuriten(state, chankanTile ?? discard!.tile)
+  ) {
     return [];
   }
+  const winningTile = chankanTile ?? discard!.tile;
   const result = calculateAgariScore({
-    hand: getSelfAgariHand(state, discard.tile),
-    winningTile: discard.tile,
+    hand: getSelfAgariHand(state, winningTile),
+    winningTile,
     method: "ron",
     calls: state.self.calls,
     seatWind: state.self.seatWind,
@@ -55,7 +80,8 @@ function evaluateRonAction(state: GameState, phase: DecisionPhase): EvaluatedAct
     rules: state.rules,
     riichi: state.self.riichi,
     ippatsu: state.self.ippatsu,
-    houtei: state.round.turn >= 18,
+    chankan: phase === "chankan",
+    houtei: phase !== "chankan" && state.round.turn >= 18,
     doraIndicators: state.doraIndicators,
   });
   if (result.status !== "scored" || !result.best) {
@@ -109,5 +135,25 @@ function getSelfAgariHand(state: GameState, winningTile: TileId): TileId[] {
 }
 
 function isBasicFuriten(state: GameState, tile: TileId): boolean {
-  return state.self.discards.some((discard) => discard.tile === tile);
+  const selfDiscards = new Set(state.self.discards.map((discard) => discard.tile));
+  if (selfDiscards.has(tile)) {
+    return true;
+  }
+  try {
+    const analysis = analyzeHandText({
+      text: (state.self.hand ?? []).join(""),
+      mode: hasOpenCall(state) ? 1 : 0,
+      includeRaw: false,
+    });
+    if (analysis.kind !== "draw" || analysis.shanten !== 0) {
+      return false;
+    }
+    return analysis.draws.some((draw) => selfDiscards.has(draw.id));
+  } catch {
+    return false;
+  }
+}
+
+function hasOpenCall(state: GameState): boolean {
+  return state.self.calls.some((call) => call.type !== "ankan");
 }

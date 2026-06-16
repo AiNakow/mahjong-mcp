@@ -133,3 +133,32 @@
 - 扩展 `evaluate-shape.ts` 的超载搭子判断：弱搭子价值不再只看当前进张，新增预计听牌质量和直接两面改良，覆盖 `23 > 45`、`35 > 79 > 12/89` 等无额外路线时的默认取舍。
 - 新增副露速度价值 `callability`：对子按三家可碰、吃牌按上家可吃估算，并结合出牌倾向、役确定性和路线有效性；役确定时幺九对子可因高碰出率获得较高速度加分。
 - 补充 `tests/evaluate-shape.test.ts`，覆盖搭子超载时优先拆 `12` 而非 `79`，以及有役路线下幺九对子/役牌对子可碰价值；同步更新 `docs/strategy-and-explanation.md`。
+
+## 2026-06-15
+
+- 推进统一动作仲裁器第一步：`generateLegalActions` 现在在自家摸牌阶段生成自摸、立直、暗杠、加杠和切牌候选，在他家打牌阶段生成荣和、碰、吃、大明杠和不鸣候选。
+- 将吃碰评分和杠评分接入统一合法动作集合；`chooseAction` 先生成 `legalActions`，再把合法动作传给 `evaluateCallActions` 和 `evaluateKanActions` 做策略评分。
+- 调整 `DecisionAction` 中吃/碰的 `discard` 为可选字段：合法动作阶段不强行携带副露后切牌，评分后的推荐动作仍会填入实际后续切牌。
+- 新增 `tests/legal-actions.test.ts`，快速覆盖自摸阶段和他家打牌阶段的合法动作集合、吃牌来源限制，以及立直后不能吃碰杠/再次立直。
+- 新增 `tests/call-evaluation.test.ts`，覆盖吃碰评分只消费传入的合法动作模式，避免合法性规则和评分器内部生成逻辑漂移。
+- 验证 `npm run check`、`node --test tests\legal-actions.test.ts tests\call-evaluation.test.ts` 和关键 `chooseAction` 仲裁用例通过。当前完整 `npm test` 仍受若干二层估值慢测影响，需后续单独优化测试耗时。
+- 继续收口动作仲裁链路：`evaluateAgariActions` 现在可消费 `legalActions`，只对合法动作集合中存在的 `tsumo` / `ron` 做计分；`riichiAnalysisToActions` 也会按合法立直切牌集合过滤候选。
+- 保持历史 14 张隐式切牌输入兼容：当 `GameState` 没有 `lastDraw` / `lastDiscard` 且手牌可切牌时，`generateLegalActions` 仍会生成立直候选，避免旧的何切式测试和 CLI 输入失去立直推荐。
+- 新增 `tests/agari-evaluation.test.ts` 和 `tests/evaluate-action.test.ts`，用轻量测试覆盖和牌/立直评分消费合法动作集合的行为。
+- 验证 `npm run check`、轻量动作测试、关键 `chooseAction` 仲裁用例和 `tests/riichi.test.ts` 通过。关键回归仍显示 `chooseAction` 在已经可和牌场景下会继续跑昂贵何切分析，后续应做和牌优先短路与慢测拆分。
+- 实现和牌优先短路：`chooseAction` 在 `evaluateAgariActions` 返回有效 `tsumo` / `ron` 后直接返回和牌决策，不再继续运行何切、立直、副露、杠和 EV 分析；这保持当前“能和就和”的策略边界。
+- 补充 `chooseAction short-circuits expensive discard analysis after valid tsumo` 测试，断言有效自摸时返回的 `analysis.candidates` 为空且候选列表只包含和牌候选。
+- 验证自摸关键用例从约 39 秒降到毫秒级；关键动作仲裁回归和轻量动作测试继续通过。剩余慢点集中在副露、立直和二层估值相关用例。
+- 继续统一动作仲裁主干：`GameState` 新增可选显式 `phase` 字段，`determineDecisionPhase` 优先读取该字段；已支持 `after_call_discard` 阶段，该阶段只生成普通切牌合法动作。
+- 普通切牌动作也接入合法动作集合过滤：`discardAnalysisToActions` 可按 `legalActions` 限制可输出切牌，`evaluateDiscardDecision` 返回的候选现在经过合法切牌集合过滤。
+- 新增基础动作应用器 `applyDecisionAction`，支持切牌、立直切牌、不鸣、吃/碰及其后续切牌、杠动作登记和和牌终局标记，为后续状态推进与多步动作流程提供统一入口。
+- 新增/扩展 `tests/apply-action.test.ts`、`tests/evaluate-action.test.ts`、`tests/legal-actions.test.ts` 和 `tests/choose-action.test.ts`，覆盖合法切牌过滤、`after_call_discard`、副露后必须切牌和动作应用器基础状态变化。
+- 增强荣和振听判断：`evaluateAgariActions` 不再只检查当前荣和牌是否自家曾切过，而是通过现有牌理 draw 分析获取当前所有待牌；任一当前待牌出现在自家河中都会阻止 `ron`。
+- 补充 `tests/agari-evaluation.test.ts` 覆盖两面听中自家曾切其中一面、他家打另一面时不能荣和的基础振听场景。
+- 增加副露后食替限制：`GameState` 新增 `forbiddenDiscards`，吃/碰后的模拟局面和动作应用器会写入禁止立刻切出的牌；合法切牌生成会过滤这些牌。当前覆盖碰后同牌食替，以及吃牌后能与手中两张组成同一顺子的替换牌。
+- 立直后杠牌合法性改为保守支持：仍禁止加杠/明杠，但允许自摸牌正好补成手内暗刻第四张时生成暗杠候选。
+- 增加临时振听状态：`GameState` 新增 `temporaryFuriten`；对可荣和弃牌选择 `pass` 时，`applyDecisionAction` 会标记临时振听，`evaluateAgariActions` 会在该状态下阻止 `ron`。
+- 补充食替、立直后暗杠和临时振听测试；关键动作仲裁回归继续通过。
+- 完善振听状态推进：新增 `advanceToSelfDraw`，进入自家摸牌阶段时会解除普通临时振听；新增 `riichiFuriten`，立直后见逃会进入立直振听，并在后续自摸推进中保持。
+- 精确化立直后暗杠合法性：立直后只允许自摸牌补成手内暗刻第四张，且暗杠前后的待牌集合必须完全一致；若待牌减少或变化，不生成暗杠候选。
+- 补充普通临时振听解除、立直振听保持、立直后暗杠待牌变化拒绝的测试；`npm run check`、轻量动作测试和关键 `chooseAction` 回归通过。

@@ -17,6 +17,28 @@ test("chooseAction keeps attack mode discard when there is no threat", () => {
   assert.equal(decision.analysis.recommendation, "7s");
 });
 
+test("chooseAction only arbitrates discards after a call has already resolved", () => {
+  const state = makeState(
+    ["2m", "3m", "4m", "3p", "4p", "5p", "2s", "3s", "4s", "7m", "8m"],
+    {
+      phase: "after_call_discard",
+      calls: [{ type: "pon", tiles: ["5z", "5z", "5z"], calledTile: "5z", from: "right" }],
+    },
+  );
+  const decision = chooseAction(state, {
+    useEvDecision: false,
+    policy: {
+      useTwoLayerValueForIishanten: false,
+      useScoringForTenpaiValue: false,
+    },
+  });
+
+  assert.equal(decision.phase, "after_call_discard");
+  assert.equal(decision.action?.type, "discard");
+  assert.equal(decision.candidates.length > 0, true);
+  assert.equal(decision.candidates.every((candidate) => candidate.action.type === "discard"), true);
+});
+
 test("chooseAction recommends tsumo before discard when self draw wins", () => {
   const state = makeState(
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
@@ -30,6 +52,18 @@ test("chooseAction recommends tsumo before discard when self draw wins", () => {
   assert.match(decision.explanation, /自摸/);
 });
 
+test("chooseAction short-circuits expensive discard analysis after valid tsumo", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
+    { lastDraw: "4s" },
+  );
+  const decision = chooseAction(state);
+
+  assert.deepEqual(decision.action, { type: "tsumo" });
+  assert.equal(decision.analysis.candidates.length, 0);
+  assert.equal(decision.candidates.every((candidate) => candidate.category === "agari"), true);
+});
+
 test("chooseAction recommends ron before pass when opponent discard wins", () => {
   const state = makeState(
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
@@ -41,6 +75,28 @@ test("chooseAction recommends ron before pass when opponent discard wins", () =>
   assert.deepEqual(decision.action, { type: "ron" });
   assert.equal(decision.candidates[0].category, "agari");
   assert.match(decision.explanation, /荣和/);
+});
+
+test("chooseAction can pass a final-hand ron that does not improve placement", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "3z", "3z"],
+    {
+      lastDiscard: "4s",
+      lastDiscardPlayerIndex: 1,
+      bakaze: "2z",
+      kyoku: 4,
+      selfSeatWind: "1z",
+      selfPoints: 10000,
+      opponentPoints: [25000, 30000, 35000],
+    },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.deepEqual(decision.action, { type: "pass" });
+  assert.ok(decision.candidates.some((candidate) => (
+    candidate.action.type === "ron"
+    && candidate.warnings.some((warning) => String(warning.message).includes("继续追逆转"))
+  )));
 });
 
 test("chooseAction does not recommend ron when basic furiten applies", () => {
@@ -708,6 +764,7 @@ function makeState(hand: TileId[], options: {
   lastDiscard?: TileId;
   lastDiscardPlayerIndex?: number;
   calls?: PlayerState["calls"];
+  phase?: GameState["phase"];
 } = {}): GameState {
   const self: PlayerState = {
     seatWind: options.selfSeatWind ?? "1z",
@@ -743,6 +800,7 @@ function makeState(hand: TileId[], options: {
     self,
     opponents,
     doraIndicators: options.doraIndicators ?? [],
+    phase: options.phase,
     lastDraw: options.lastDraw,
     lastDiscard: options.lastDiscard
       ? { tile: options.lastDiscard, tsumogiri: false, playerIndex: options.lastDiscardPlayerIndex ?? 1 }

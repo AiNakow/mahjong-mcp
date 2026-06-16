@@ -49,6 +49,18 @@ test("riichi discard pays declaration stick and recovers it on win probability",
   assert.ok(estimate.breakdown.riichiStick > -1000);
 });
 
+test("kan action receives a fast round income estimate", () => {
+  const state = makeState();
+  const estimate = estimateRound({
+    state,
+    action: { type: "ankan", tiles: ["5m", "5m", "5m", "5m"] },
+  });
+
+  assert.equal(estimate.action.type, "ankan");
+  assert.equal(Number.isFinite(estimate.expectedRoundIncome.value), true);
+  assert.ok(estimate.warnings.some((warning) => warning.includes("杠动作 EV")));
+});
+
 function makeCandidate(discard: TileId, waits: Array<{ id: TileId; remaining: number }>): DiscardCandidate {
   return {
     discard,

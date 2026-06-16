@@ -7,6 +7,8 @@ export type StrategyMode = "attack" | "balance" | "defense" | "push";
 export type DecisionPhase =
   | "self_draw"
   | "opponent_discard"
+  | "chankan"
+  | "rinshan_draw"
   | "after_call_discard"
   | "unknown";
 
@@ -15,8 +17,8 @@ export type DecisionAction =
   | { type: "riichi"; tile: TileId }
   | { type: "tsumo" }
   | { type: "ron" }
-  | { type: "chi"; tiles: TileId[]; calledTile: TileId; discard: TileId }
-  | { type: "pon"; tiles: TileId[]; calledTile: TileId; discard: TileId }
+  | { type: "chi"; tiles: TileId[]; calledTile: TileId; discard?: TileId }
+  | { type: "pon"; tiles: TileId[]; calledTile: TileId; discard?: TileId }
   | { type: "minkan"; tiles: TileId[]; calledTile: TileId; discard?: TileId }
   | { type: "ankan"; tiles: TileId[]; discard?: TileId }
   | { type: "kakan"; tiles: TileId[]; discard?: TileId }

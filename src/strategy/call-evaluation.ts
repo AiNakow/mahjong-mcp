@@ -5,6 +5,8 @@ import type { ChooseActionOptions } from "./choose-action.ts";
 import { evaluateDiscardDecision } from "./choose-action.ts";
 import { discardAnalysisToActions } from "./evaluate-action.ts";
 import type { DecisionAction, DecisionPhase, EvaluatedAction } from "./action-types.ts";
+import { getPostCallForbiddenDiscards } from "./call-constraints.ts";
+import type { LegalAction } from "./legal-actions.ts";
 import type { Reason } from "./reason.ts";
 import type { EvaluatedNanikiruCandidate } from "./evaluate-nanikiru.ts";
 
@@ -19,6 +21,7 @@ export function evaluateCallActions(
   state: GameState,
   phase: DecisionPhase,
   options: ChooseActionOptions = {},
+  legalActions?: readonly LegalAction[],
 ): EvaluatedAction[] {
   if (phase !== "opponent_discard" || !state.lastDiscard || state.self.riichi) {
     return [];
@@ -32,10 +35,14 @@ export function evaluateCallActions(
   });
   const beforeShanten = before.shanten;
 
-  return [
-    ...generatePonPatterns(state),
-    ...generateChiPatterns(state),
-  ].flatMap((pattern) => evaluateCallPattern(state, phase, pattern, beforeShanten, options));
+  const patterns = legalActions
+    ? callPatternsFromLegalActions(legalActions)
+    : [
+      ...generatePonPatterns(state),
+      ...generateChiPatterns(state),
+    ];
+
+  return patterns.flatMap((pattern) => evaluateCallPattern(state, phase, pattern, beforeShanten, options));
 }
 
 function evaluateCallPattern(
@@ -169,6 +176,31 @@ function generatePonPatterns(state: GameState): CallPattern[] {
   }];
 }
 
+function callPatternsFromLegalActions(actions: readonly LegalAction[]): CallPattern[] {
+  const patterns: CallPattern[] = [];
+  for (const item of actions) {
+    const action = item.action;
+    if (action.type === "pon") {
+      patterns.push({
+        type: "pon",
+        tiles: action.tiles,
+        consumed: [action.calledTile, action.calledTile],
+        calledTile: action.calledTile,
+      });
+      continue;
+    }
+    if (action.type === "chi") {
+      patterns.push({
+        type: "chi",
+        tiles: action.tiles,
+        consumed: action.tiles.filter((tile) => tile !== action.calledTile),
+        calledTile: action.calledTile,
+      });
+    }
+  }
+  return patterns;
+}
+
 function generateChiPatterns(state: GameState): CallPattern[] {
   const calledTile = state.lastDiscard?.tile;
   if (!calledTile || !canChiFromDiscard(state)) {
@@ -209,6 +241,11 @@ function applyCallPattern(state: GameState, pattern: CallPattern): GameState {
   };
   return {
     ...state,
+    forbiddenDiscards: getPostCallForbiddenDiscards({
+      type: pattern.type,
+      tiles: pattern.tiles,
+      calledTile: pattern.calledTile,
+    }),
     lastDiscard: undefined,
     lastDraw: undefined,
     self: {

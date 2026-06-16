@@ -33,6 +33,9 @@ import { determineDecisionPhase, generateLegalActions } from "./legal-actions.ts
 import { evaluateAgariActions } from "./agari-evaluation.ts";
 import { evaluateCallActions } from "./call-evaluation.ts";
 import { evaluateKanActions } from "./kan-evaluation.ts";
+import { estimateRound } from "../ev/index.ts";
+import type { EvaluatedNanikiruCandidate } from "./evaluate-nanikiru.ts";
+import type { AgariScoreResult } from "../scoring/index.ts";
 
 export interface ActionDecision {
   phase: DecisionPhase;
@@ -51,20 +54,34 @@ export interface ChooseActionOptions {
 export function chooseAction(state: GameState, options: ChooseActionOptions = {}): ActionDecision {
   const phase = determineDecisionPhase(state);
   const legalActions = generateLegalActions(state);
-  const agariCandidates = evaluateAgariActions(state, phase);
+  const agariCandidates = evaluateAgariActions(state, phase, legalActions);
+  applyAgariAcceptancePolicy(agariCandidates, state);
+  const forcedAgari = selectForcedAgari(agariCandidates);
+  if (forcedAgari) {
+    const analysis = createEmptyAnalysis(getSelfHandForDiscard(state));
+    return {
+      phase,
+      mode: "attack",
+      action: forcedAgari.action,
+      analysis,
+      candidates: [...agariCandidates].sort(compareEvaluatedActions),
+      explanation: renderAgariDecisionExplanation(forcedAgari),
+    };
+  }
   const discardDecision = canEvaluateDiscardDecision(state)
     ? evaluateDiscardDecision(state, options)
     : undefined;
   const analysis = discardDecision?.analysis ?? createEmptyAnalysis(getSelfHandForDiscard(state));
   const discardCandidates = discardDecision?.candidates ?? [];
   const riichiCandidates = discardDecision
-    ? riichiAnalysisToActions(discardDecision.analysis, phase, state)
+    ? riichiAnalysisToActions(discardDecision.analysis, phase, state, legalActions)
     : [];
-  const callCandidates = evaluateCallActions(state, phase, options);
-  const kanCandidates = evaluateKanActions(state, phase);
+  const callCandidates = evaluateCallActions(state, phase, options, legalActions);
+  const kanCandidates = evaluateKanActions(state, phase, legalActions);
   const passCandidates = legalActions
     .filter((item) => item.action.type === "pass")
     .map((item) => evaluatePassAction(state, item.phase, callCandidates));
+  const mode = discardDecision?.mode ?? "attack";
   const candidates = [
     ...agariCandidates,
     ...riichiCandidates,
@@ -73,9 +90,9 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
     ...kanCandidates,
     ...passCandidates,
   ];
+  applyUnifiedActionEv(candidates, state, options.useEvDecision ?? true, mode);
   const sortedCandidates = [...candidates].sort(compareEvaluatedActions);
   const selected = arbitrateActions(sortedCandidates);
-  const mode = discardDecision?.mode ?? "attack";
 
   return {
     phase,
@@ -95,6 +112,173 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
         ? renderPassDecisionExplanation(selected)
       : renderDecisionExplanation(mode, analysis, discardDecision?.highValueHand ?? false),
   };
+}
+
+function applyUnifiedActionEv(
+  candidates: EvaluatedAction[],
+  state: GameState,
+  enabled: boolean,
+  mode: StrategyMode,
+): void {
+  if (!enabled) {
+    return;
+  }
+  for (const candidate of candidates) {
+    if (!candidate.legal || candidate.category === "agari" || candidate.category === "pass") {
+      continue;
+    }
+    const estimateAction = getEstimateAction(candidate.action, state);
+    if (!estimateAction) {
+      continue;
+    }
+    try {
+      const source = candidate.source as EvaluatedNanikiruCandidate | undefined;
+      const originalEv = candidate.scoreBreakdown.ev ?? 0;
+      const estimate = estimateRound({
+        state,
+        mode: "fast",
+        action: estimateAction,
+        candidate: source,
+      });
+      const nextEv = calculateActionEvScore(estimate.expectedRoundIncome.value, mode, candidate.category);
+      candidate.estimate = estimate;
+      candidate.scoreBreakdown.ev = nextEv;
+      candidate.score += nextEv - originalEv;
+      if (candidate.category === "kan") {
+        candidate.reasons.push({
+          type: "ev",
+          polarity: nextEv >= 0 ? "positive" : "negative",
+          priority: 70,
+          message: `杠动作快速 EV 估算局收支约 ${Math.round(estimate.expectedRoundIncome.value)} 点。`,
+          data: {
+            action: estimateAction.type,
+            expectedRoundIncome: estimate.expectedRoundIncome.value,
+          },
+        });
+      }
+    } catch {
+      // EV is advisory. Keep the base tactical score if a candidate cannot be estimated.
+    }
+  }
+}
+
+function getEstimateAction(
+  action: DecisionAction,
+  state: GameState,
+): Parameters<typeof estimateRound>[0]["action"] | undefined {
+  if (action.type === "discard") {
+    return { type: "discard", tile: action.tile };
+  }
+  if (action.type === "riichi") {
+    return { type: "riichi-discard", tile: action.tile };
+  }
+  if ((action.type === "chi" || action.type === "pon") && action.discard) {
+    return {
+      type: "call-discard",
+      callType: action.type,
+      calledTile: action.calledTile,
+      tile: action.discard,
+    };
+  }
+  if (action.type === "minkan") {
+    return { type: "minkan", tiles: action.tiles, calledTile: action.calledTile };
+  }
+  if (action.type === "ankan" || action.type === "kakan") {
+    return { type: action.type, tiles: action.tiles };
+  }
+  return undefined;
+}
+
+function calculateActionEvScore(
+  expectedRoundIncome: number,
+  mode: StrategyMode,
+  category: EvaluatedAction["category"],
+): number {
+  const modeWeight = mode === "defense" ? 1.0 : mode === "balance" ? 0.7 : mode === "push" ? 0.5 : 0.4;
+  const categoryWeight = category === "kan" ? 0.35 : category === "riichi" ? 0.55 : 1;
+  return Math.round((expectedRoundIncome / 100) * modeWeight * categoryWeight * 10) / 10;
+}
+
+function selectForcedAgari(candidates: readonly EvaluatedAction[]): EvaluatedAction | undefined {
+  return candidates
+    .filter((candidate) => (
+      candidate.legal
+      && candidate.priority >= 0
+      && candidate.category === "agari"
+      && (candidate.action.type === "tsumo" || candidate.action.type === "ron")
+    ))
+    .sort(compareEvaluatedActions)[0];
+}
+
+function applyAgariAcceptancePolicy(candidates: EvaluatedAction[], state: GameState): void {
+  for (const candidate of candidates) {
+    if (!candidate.legal || candidate.category !== "agari") {
+      continue;
+    }
+    const rejection = getAgariRejection(state, candidate);
+    if (!rejection) {
+      continue;
+    }
+    candidate.score = -200000;
+    candidate.priority = -100;
+    candidate.reasons.unshift({
+      type: "placement",
+      polarity: "negative",
+      priority: 100,
+      message: rejection,
+    });
+    candidate.warnings.push(candidate.reasons[0]!);
+  }
+}
+
+function getAgariRejection(state: GameState, candidate: EvaluatedAction): string | undefined {
+  if (!isFinalHand(state) || state.self.riichi) {
+    return undefined;
+  }
+  const currentRank = getSelfRank(state);
+  if (currentRank <= 1) {
+    return undefined;
+  }
+  const gain = getAgariPointGain(candidate);
+  if (gain <= 0) {
+    return undefined;
+  }
+  const rankAfter = getSelfRank(state, gain);
+  if (rankAfter < currentRank) {
+    return undefined;
+  }
+  const nextDiff = getDiffToNext(state);
+  if (nextDiff === undefined || nextDiff <= 0) {
+    return undefined;
+  }
+  const actionText = candidate.action.type === "tsumo" ? "自摸" : "荣和";
+  return `终局名次判断：当前第 ${currentRank}，${actionText}约 ${gain} 点仍无法超过上一名（差 ${nextDiff} 点），可选择不和继续追逆转。`;
+}
+
+function isFinalHand(state: GameState): boolean {
+  return state.round.bakaze === "2z" && state.round.kyoku >= 4;
+}
+
+function getSelfRank(state: GameState, selfGain = 0): number {
+  const selfPoints = state.self.points + selfGain;
+  return [selfPoints, ...state.opponents.map((opponent) => opponent.points)]
+    .sort((a, b) => b - a)
+    .findIndex((points) => points === selfPoints) + 1;
+}
+
+function getDiffToNext(state: GameState): number | undefined {
+  const sorted = [state.self.points, ...state.opponents.map((opponent) => opponent.points)]
+    .sort((a, b) => b - a);
+  const index = sorted.findIndex((points) => points === state.self.points);
+  if (index <= 0) {
+    return undefined;
+  }
+  return sorted[index - 1]! - state.self.points;
+}
+
+function getAgariPointGain(candidate: EvaluatedAction): number {
+  const source = candidate.source as AgariScoreResult | undefined;
+  return source?.best?.points.total ?? Math.round((candidate.scoreBreakdown.agari ?? candidate.score) * 10);
 }
 
 export interface DiscardDecisionEvaluation {
@@ -146,7 +330,7 @@ export function evaluateDiscardDecision(state: GameState, options: ChooseActionO
   return {
     mode,
     analysis,
-    candidates: discardAnalysisToActions(analysis, phase),
+    candidates: discardAnalysisToActions(analysis, phase, generateLegalActions(state)),
     highValueHand,
   };
 }

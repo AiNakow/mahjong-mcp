@@ -1,25 +1,55 @@
 import type { DecisionPhase, EvaluatedAction } from "./action-types.ts";
 import type { EvaluatedNanikiruAnalysis, EvaluatedNanikiruCandidate } from "./evaluate-nanikiru.ts";
 import type { GameState } from "../core/state.ts";
+import type { TileId } from "../core/tile.ts";
+import type { LegalAction } from "./legal-actions.ts";
 
 export function discardAnalysisToActions(
   analysis: EvaluatedNanikiruAnalysis,
   phase: DecisionPhase,
+  legalActions?: readonly LegalAction[],
 ): EvaluatedAction[] {
-  return analysis.candidates.map((candidate) => discardCandidateToAction(candidate, phase));
+  const legalDiscardTiles = getLegalDiscardTiles(legalActions);
+  return analysis.candidates
+    .filter((candidate) => !legalActions || legalDiscardTiles.has(candidate.discard))
+    .map((candidate) => discardCandidateToAction(candidate, phase));
 }
 
 export function riichiAnalysisToActions(
   analysis: EvaluatedNanikiruAnalysis,
   phase: DecisionPhase,
   state: GameState,
+  legalActions?: readonly LegalAction[],
 ): EvaluatedAction[] {
   if (!canDeclareRiichi(state)) {
     return [];
   }
+  const legalRiichiTiles = getLegalRiichiTiles(legalActions);
+  if (legalActions && legalRiichiTiles.size === 0) {
+    return [];
+  }
   return analysis.candidates
-    .filter((candidate) => candidate.shanten === 0 && candidate.riichiJudgment?.canRiichi && candidate.riichiJudgment.shouldRiichi)
+    .filter((candidate) => (
+      candidate.shanten === 0
+      && candidate.riichiJudgment?.canRiichi
+      && candidate.riichiJudgment.shouldRiichi
+      && (!legalActions || legalRiichiTiles.has(candidate.discard))
+    ))
     .map((candidate) => riichiCandidateToAction(candidate, phase));
+}
+
+function getLegalRiichiTiles(legalActions: readonly LegalAction[] | undefined): Set<TileId> {
+  return new Set(
+    (legalActions ?? [])
+      .flatMap((item) => item.action.type === "riichi" ? [item.action.tile] : []),
+  );
+}
+
+function getLegalDiscardTiles(legalActions: readonly LegalAction[] | undefined): Set<TileId> {
+  return new Set(
+    (legalActions ?? [])
+      .flatMap((item) => item.action.type === "discard" ? [item.action.tile] : []),
+  );
 }
 
 function discardCandidateToAction(

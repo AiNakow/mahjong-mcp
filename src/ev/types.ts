@@ -10,6 +10,7 @@ export type CandidateAction =
   | { type: "discard"; tile: TileId }
   | { type: "riichi-discard"; tile: TileId }
   | { type: "call-discard"; callType: "chi" | "pon" | "minkan"; calledTile: TileId; tile: TileId }
+  | { type: "minkan"; tiles: TileId[]; calledTile: TileId }
   | { type: "ankan"; tiles: TileId[] }
   | { type: "kakan"; tiles: TileId[] };
 

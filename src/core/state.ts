@@ -40,7 +40,17 @@ export interface DiscardEvent extends Discard {
   playerIndex: number;
 }
 
+export interface KanEvent {
+  type: "minkan" | "ankan" | "kakan";
+  tile: TileId;
+  playerIndex: number;
+}
+
 export interface GameState {
+  phase?: "self_draw" | "opponent_discard" | "chankan" | "rinshan_draw" | "after_call_discard";
+  forbiddenDiscards?: TileId[];
+  temporaryFuriten?: boolean;
+  riichiFuriten?: boolean;
   round: RoundState;
   self: PlayerState;
   opponents: PlayerState[];
@@ -48,6 +58,7 @@ export interface GameState {
   visibleTiles: Counts34;
   lastDraw?: TileId;
   lastDiscard?: DiscardEvent;
+  lastKan?: KanEvent;
   rules: RuleConfig;
 }
 
