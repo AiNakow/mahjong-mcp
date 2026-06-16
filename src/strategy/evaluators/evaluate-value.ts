@@ -37,6 +37,8 @@ interface TwoLayerEstimate {
 }
 
 const TWO_LAYER_ESTIMATE_CACHE = new Map<string, TwoLayerEstimate>();
+const DISCARD_ANALYSIS_CACHE = new Map<string, ReturnType<typeof analyzeTiles>>();
+const AGARI_POINTS_CACHE = new Map<string, number>();
 
 export function evaluateValuePotential(
   afterDiscard: readonly TileId[],
@@ -185,7 +187,7 @@ function estimateIishantenTwoLayer(
       continue;
     }
     const afterDraw = [...afterDiscard, draw.id];
-    const analysis = analyzeTiles(afterDraw, mode, { includeShantenBack: true });
+    const analysis = analyzeDiscardHandCached(afterDraw, mode);
     if (analysis.kind !== "discard") {
       continue;
     }
@@ -235,22 +237,14 @@ function evaluateTenpaiScoringRoute(
   let bestTotal = 0;
   let bestWait: TileId | undefined;
   for (const wait of context.waits) {
-    const result = calculateAgariScore({
+    const total = calculateAgariTotalCached({
       hand: [...afterDiscard, wait.id],
       winningTile: wait.id,
-      method: "ron",
-      calls: context.context?.calls,
-      seatWind: context.context?.seatWind,
-      bakaze: context.context?.bakaze,
-      rules: context.context?.rules,
-      honba: context.context?.honba,
-      riichiSticks: context.context?.riichiSticks,
-      doraIndicators: context.context?.doraIndicators,
-      uraDoraIndicators: context.context?.uraDoraIndicators,
-      akaDoraCount: context.context?.akaDoraCount,
+      context: context.context,
+      riichi: false,
     });
-    if (result.best && result.best.points.total > bestTotal) {
-      bestTotal = result.best.points.total;
+    if (total > bestTotal) {
+      bestTotal = total;
       bestWait = wait.id;
     }
   }
@@ -297,25 +291,16 @@ function estimateWeightedAgariPoints(
     if (wait.remaining <= 0) {
       continue;
     }
-    const result = calculateAgariScore({
+    const total = calculateAgariTotalCached({
       hand: [...tenpaiHand, wait.id],
       winningTile: wait.id,
-      method: "ron",
-      calls: context.calls,
-      seatWind: context.seatWind,
-      bakaze: context.bakaze,
-      rules: context.rules,
-      honba: context.honba,
-      riichiSticks: context.riichiSticks,
-      doraIndicators: context.doraIndicators,
-      uraDoraIndicators: context.uraDoraIndicators,
-      akaDoraCount: context.akaDoraCount,
+      context,
       riichi: assumeRiichi,
     });
-    if (!result.best) {
+    if (total <= 0) {
       continue;
     }
-    weightedTotal += result.best.points.total * wait.remaining;
+    weightedTotal += total * wait.remaining;
     totalRemaining += wait.remaining;
   }
 
@@ -344,6 +329,66 @@ function getTwoLayerCacheKey(
     maxTenpaiDiscards: policy.twoLayerMaxTenpaiDiscards,
     assumeRiichi: policy.assumeRiichiForMenzenTwoLayer,
   });
+}
+
+function analyzeDiscardHandCached(tiles: readonly TileId[], mode: 0 | 1): ReturnType<typeof analyzeTiles> {
+  const key = JSON.stringify({
+    hand: [...tiles].sort(),
+    mode,
+    includeShantenBack: true,
+  });
+  const cached = DISCARD_ANALYSIS_CACHE.get(key);
+  if (cached) {
+    return cached;
+  }
+  const analysis = analyzeTiles(tiles, mode, { includeShantenBack: true });
+  DISCARD_ANALYSIS_CACHE.set(key, analysis);
+  return analysis;
+}
+
+function calculateAgariTotalCached(input: {
+  hand: readonly TileId[];
+  winningTile: TileId;
+  context?: NanikiruContext;
+  riichi: boolean;
+}): number {
+  const context = input.context ?? {};
+  const key = JSON.stringify({
+    hand: [...input.hand].sort(),
+    winningTile: input.winningTile,
+    calls: context.calls ?? [],
+    seatWind: context.seatWind,
+    bakaze: context.bakaze,
+    rules: context.rules,
+    honba: context.honba,
+    riichiSticks: context.riichiSticks,
+    doraIndicators: context.doraIndicators ?? [],
+    uraDoraIndicators: context.uraDoraIndicators ?? [],
+    akaDoraCount: context.akaDoraCount ?? 0,
+    riichi: input.riichi,
+  });
+  const cached = AGARI_POINTS_CACHE.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const result = calculateAgariScore({
+    hand: [...input.hand],
+    winningTile: input.winningTile,
+    method: "ron",
+    calls: context.calls,
+    seatWind: context.seatWind,
+    bakaze: context.bakaze,
+    rules: context.rules,
+    honba: context.honba,
+    riichiSticks: context.riichiSticks,
+    doraIndicators: context.doraIndicators,
+    uraDoraIndicators: context.uraDoraIndicators,
+    akaDoraCount: context.akaDoraCount,
+    riichi: input.riichi,
+  });
+  const total = result.best?.points.total ?? 0;
+  AGARI_POINTS_CACHE.set(key, total);
+  return total;
 }
 
 function isMenzenContext(context: NanikiruContext): boolean {

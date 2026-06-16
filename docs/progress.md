@@ -171,3 +171,7 @@
 - 同步 README 项目结构，补充动作仲裁、合法动作、副露/杠/和牌评估、动作应用器、EV 模块和 estimate 服务入口等已存在文件。
 - 更新 `docs/当前局面动作仲裁器设计与实现.md`：保留原设计方案，同时新增“当前实现状态”，记录动作框架、合法动作、和牌短路、立直动作、副露后切牌、杠动作、pass 仲裁、动作应用器、振听推进和 `decide` CLI 的当前进度。
 - 将动作仲裁设计文档中的阶段列表更新为已完成/基础版已完成状态，并把下一阶段明确为稳定化和边界补全：终局见逃/不鸣解释、杠动作边界测试、慢测优化和后续接口层准备。
+- 继续推进动作仲裁稳定化和测试性能收口：统一动作 EV 层会复用候选已有 `estimate`，避免切牌和副露后切牌候选在 `evaluateDiscardDecision` 与 `applyUnifiedActionEv` 中重复估算。
+- 为一向听二层打点估算增加模块级缓存，复用切后摸牌分析和相同计分上下文下的最高和牌点数，降低重复 `analyzeTiles` 和 `calculateAgariScore` 成本。
+- 调整 `tests/choose-action.test.ts`：非 EV 目标的动作仲裁/局况测试通过 `chooseFast` 关闭 EV 并降低二层估值预算；保留需要 EV 影响排序的立直/改良用例单独启用低预算 EV。
+- 验证 `npm run check`、`npm run test:actions`、`npm run test:fast`、`npm run test:slow` 和完整 `npm test` 均通过；完整测试当前 173 个通过，本轮运行耗时约 2-3 分钟。

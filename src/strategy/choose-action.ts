@@ -134,12 +134,14 @@ function applyUnifiedActionEv(
     try {
       const source = candidate.source as EvaluatedNanikiruCandidate | undefined;
       const originalEv = candidate.scoreBreakdown.ev ?? 0;
-      const estimate = estimateRound({
-        state,
-        mode: "fast",
-        action: estimateAction,
-        candidate: source,
-      });
+      const estimate = canReuseActionEstimate(candidate, estimateAction)
+        ? candidate.estimate!
+        : estimateRound({
+          state,
+          mode: "fast",
+          action: estimateAction,
+          candidate: source,
+        });
       const nextEv = calculateActionEvScore(estimate.expectedRoundIncome.value, mode, candidate.category);
       candidate.estimate = estimate;
       candidate.scoreBreakdown.ev = nextEv;
@@ -160,6 +162,41 @@ function applyUnifiedActionEv(
       // EV is advisory. Keep the base tactical score if a candidate cannot be estimated.
     }
   }
+}
+
+function canReuseActionEstimate(
+  candidate: EvaluatedAction,
+  action: Parameters<typeof estimateRound>[0]["action"],
+): boolean {
+  if (!candidate.estimate) {
+    return false;
+  }
+  const estimated = candidate.estimate.action;
+  if (estimated.type !== action.type) {
+    return false;
+  }
+  if (estimated.type === "discard" && action.type === "discard") {
+    return estimated.tile === action.tile;
+  }
+  if (estimated.type === "riichi-discard" && action.type === "riichi-discard") {
+    return estimated.tile === action.tile;
+  }
+  if (estimated.type === "call-discard" && action.type === "call-discard") {
+    return estimated.callType === action.callType
+      && estimated.calledTile === action.calledTile
+      && estimated.tile === action.tile;
+  }
+  if (estimated.type === "minkan" && action.type === "minkan") {
+    return estimated.calledTile === action.calledTile
+      && estimated.tiles.join("|") === action.tiles.join("|");
+  }
+  if (
+    (estimated.type === "ankan" || estimated.type === "kakan")
+    && (action.type === "ankan" || action.type === "kakan")
+  ) {
+    return estimated.tiles.join("|") === action.tiles.join("|");
+  }
+  return true;
 }
 
 function getEstimateAction(

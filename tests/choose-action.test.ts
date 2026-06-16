@@ -10,7 +10,7 @@ import { evaluatePlacementAdjustment } from "../src/strategy/placement.ts";
 
 test("chooseAction keeps attack mode discard when there is no threat", () => {
   const state = makeState(["3m", "4m", "5m", "6m", "3p", "4p", "5p", "5p", "1s", "2s", "3s", "7s", "8s", "8s"]);
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.mode, "attack");
   assert.deepEqual(decision.action, { type: "discard", tile: "7s" });
@@ -44,7 +44,7 @@ test("chooseAction recommends tsumo before discard when self draw wins", () => {
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
     { lastDraw: "4s" },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.phase, "self_draw");
   assert.deepEqual(decision.action, { type: "tsumo" });
@@ -57,7 +57,7 @@ test("chooseAction short-circuits expensive discard analysis after valid tsumo",
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
     { lastDraw: "4s" },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.deepEqual(decision.action, { type: "tsumo" });
   assert.equal(decision.analysis.candidates.length, 0);
@@ -69,7 +69,7 @@ test("chooseAction recommends ron before pass when opponent discard wins", () =>
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
     { lastDiscard: "4s", lastDiscardPlayerIndex: 1 },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.phase, "opponent_discard");
   assert.deepEqual(decision.action, { type: "ron" });
@@ -122,7 +122,7 @@ test("chooseAction does not recommend ron when basic furiten applies", () => {
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
     { lastDiscard: "4s", lastDiscardPlayerIndex: 1, selfDiscards: ["4s"] },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.phase, "opponent_discard");
   assert.deepEqual(decision.action, { type: "pass" });
@@ -274,7 +274,7 @@ test("chooseAction does not recommend kakan when leading near final", () => {
 
 test("chooseAction upgrades a strong tenpai discard into a riichi action", () => {
   const state = makeState(["1m", "2m", "3m", "1p", "2p", "3p", "1s", "2s", "3s", "4s", "5s", "6s", "7p", "7p"]);
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.action?.type, "riichi");
   assert.equal(decision.candidates[0].category, "riichi");
@@ -294,7 +294,7 @@ test("chooseAction keeps discard when riichi judgment discourages riichi", () =>
       doraIndicators: ["4m", "4p"],
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.action?.type, "discard");
   assert.equal(decision.candidates[0].category, "discard");
@@ -310,7 +310,13 @@ test("chooseAction prefers early improvement over high-value bad-shape narrow ri
       selfSeatWind: "1z",
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseAction(state, {
+    policy: {
+      twoLayerMaxDrawTypes: 2,
+      twoLayerMaxTenpaiDiscards: 1,
+      sameShantenImprovementMaxDrawTypes: 3,
+    },
+  });
 
   assert.deepEqual(decision.action, { type: "discard", tile: "5m" });
   assert.equal(decision.analysis.riichiPlanDecision?.plan, "dama_improvement");
@@ -331,7 +337,7 @@ test("chooseAction does not prefer breaking dora-side taatsu by stepping back fr
       turn: 6,
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
   const shantenBack = decision.analysis.candidates.find((candidate) => candidate.discard === "3s");
 
   assert.equal(decision.mode, "attack");
@@ -355,7 +361,7 @@ test("chooseAction can step back from early low-value tenpai for dora good-shape
       selfSeatWind: "1z",
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
   const fivePin = decision.analysis.candidates[0];
 
   assert.equal(decision.mode, "attack");
@@ -384,7 +390,7 @@ test("chooseAction does not step back from low-value tenpai against riichi", () 
       opponentDiscards: ["9m", "1z"],
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.mode, "push");
   assert.equal(decision.analysis.candidates[0].shanten, 0);
@@ -398,7 +404,7 @@ test("chooseAction shifts to defense against riichi and can prefer genbutsu", ()
       opponentDiscards: ["4z", "6m", "9p"],
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.mode, "defense");
   assert.deepEqual(decision.action, { type: "discard", tile: "4z" });
@@ -418,7 +424,7 @@ test("chooseAction pushes high-value iishanten hands against riichi", () => {
       doraIndicators: ["4m", "4p"],
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.mode, "push");
   assert.match(decision.explanation, /一向听且打点较高/);
@@ -434,7 +440,7 @@ test("chooseAction does not explain dora yakuhai pair hands as tanyao leaning", 
       turn: 8,
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.deepEqual(decision.action, { type: "discard", tile: "6p" });
   assert.doesNotMatch(decision.explanation, /断幺路线/);
@@ -458,7 +464,7 @@ test("chooseAction shifts balance hands toward defense when leading near final",
       kyoku: 4,
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.mode, "defense");
   assert.ok(decision.analysis.candidates[0].reasons.some((reason) => (
@@ -479,7 +485,7 @@ test("chooseAction shifts balance hands toward push when trailing in south round
       kyoku: 2,
     },
   );
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(decision.mode, "push");
   assert.ok(decision.analysis.candidates[0].reasons.some((reason) => (
@@ -525,7 +531,7 @@ test("south four close third does not fold from an early slow hand", () => {
     },
   );
   const placement = evaluatePlacementAdjustment(state, { shanten: 3, highValueHand: false });
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(placement.avoidFourthGoal, "none");
   assert.equal(decision.mode, "attack");
@@ -543,7 +549,7 @@ test("south four close third in tenpai treats winning out as avoid-fourth route"
     },
   );
   const placement = evaluatePlacementAdjustment(state, { shanten: 0, highValueHand: false });
-  const decision = chooseAction(state);
+  const decision = chooseFast(state);
 
   assert.equal(placement.avoidFourthGoal, "winOut");
   assert.ok(placement.ukeireWeightMul > 1);
@@ -830,6 +836,17 @@ function makeState(hand: TileId[], options: {
     ...stateWithoutVisible,
     visibleTiles: buildVisibleTilesFromState(stateWithoutVisible),
   };
+}
+
+function chooseFast(state: GameState): ReturnType<typeof chooseAction> {
+  return chooseAction(state, {
+    useEvDecision: false,
+    policy: {
+      twoLayerMaxDrawTypes: 2,
+      twoLayerMaxTenpaiDiscards: 1,
+      sameShantenImprovementMaxDrawTypes: 3,
+    },
+  });
 }
 
 function makeOpponent(seatWind: "1z" | "2z" | "3z" | "4z", points = 25000): PlayerState {
