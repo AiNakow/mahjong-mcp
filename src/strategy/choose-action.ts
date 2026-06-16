@@ -80,7 +80,7 @@ export function chooseAction(state: GameState, options: ChooseActionOptions = {}
   const kanCandidates = evaluateKanActions(state, phase, legalActions);
   const passCandidates = legalActions
     .filter((item) => item.action.type === "pass")
-    .map((item) => evaluatePassAction(state, item.phase, callCandidates));
+    .map((item) => evaluatePassAction(state, item.phase, callCandidates, agariCandidates));
   const mode = discardDecision?.mode ?? "attack";
   const candidates = [
     ...agariCandidates,
@@ -235,50 +235,89 @@ function getAgariRejection(state: GameState, candidate: EvaluatedAction): string
   if (!isFinalHand(state) || state.self.riichi) {
     return undefined;
   }
-  const currentRank = getSelfRank(state);
+  const currentPoints = getCurrentPoints(state);
+  const currentRank = getSelfRank(currentPoints);
   if (currentRank <= 1) {
     return undefined;
   }
-  const gain = getAgariPointGain(candidate);
-  if (gain <= 0) {
+  const settledPoints = getSettledAgariPoints(state, candidate);
+  if (!settledPoints) {
     return undefined;
   }
-  const rankAfter = getSelfRank(state, gain);
+  const rankAfter = getSelfRank(settledPoints);
   if (rankAfter < currentRank) {
     return undefined;
   }
-  const nextDiff = getDiffToNext(state);
+  const nextDiff = getDiffToNext(currentPoints);
   if (nextDiff === undefined || nextDiff <= 0) {
     return undefined;
   }
+  const gain = settledPoints[0] - currentPoints[0];
   const actionText = candidate.action.type === "tsumo" ? "自摸" : "荣和";
-  return `终局名次判断：当前第 ${currentRank}，${actionText}约 ${gain} 点仍无法超过上一名（差 ${nextDiff} 点），可选择不和继续追逆转。`;
+  return `终局名次判断：当前第 ${currentRank}，${actionText}结算后自家约 +${gain} 点，但仍无法提升名次（距上一名 ${nextDiff} 点），可选择不和继续追逆转。`;
 }
 
 function isFinalHand(state: GameState): boolean {
   return state.round.bakaze === "2z" && state.round.kyoku >= 4;
 }
 
-function getSelfRank(state: GameState, selfGain = 0): number {
-  const selfPoints = state.self.points + selfGain;
-  return [selfPoints, ...state.opponents.map((opponent) => opponent.points)]
+function getCurrentPoints(state: GameState): [number, number, number, number] {
+  return [
+    state.self.points,
+    state.opponents[0]?.points ?? 0,
+    state.opponents[1]?.points ?? 0,
+    state.opponents[2]?.points ?? 0,
+  ];
+}
+
+function getSelfRank(points: readonly number[]): number {
+  const selfPoints = points[0] ?? 0;
+  return [...points]
     .sort((a, b) => b - a)
     .findIndex((points) => points === selfPoints) + 1;
 }
 
-function getDiffToNext(state: GameState): number | undefined {
-  const sorted = [state.self.points, ...state.opponents.map((opponent) => opponent.points)]
-    .sort((a, b) => b - a);
-  const index = sorted.findIndex((points) => points === state.self.points);
+function getDiffToNext(points: readonly number[]): number | undefined {
+  const selfPoints = points[0] ?? 0;
+  const sorted = [...points].sort((a, b) => b - a);
+  const index = sorted.findIndex((points) => points === selfPoints);
   if (index <= 0) {
     return undefined;
   }
-  return sorted[index - 1]! - state.self.points;
+  return sorted[index - 1]! - selfPoints;
 }
 
-function getAgariPointGain(candidate: EvaluatedAction): number {
+function getSettledAgariPoints(state: GameState, candidate: EvaluatedAction): [number, number, number, number] | undefined {
   const source = candidate.source as AgariScoreResult | undefined;
-  return source?.best?.points.total ?? Math.round((candidate.scoreBreakdown.agari ?? candidate.score) * 10);
+  const points = source?.best?.points;
+  if (!points) {
+    const gain = Math.round((candidate.scoreBreakdown.agari ?? candidate.score) * 10);
+    return [state.self.points + gain, ...state.opponents.map((opponent) => opponent.points)] as [number, number, number, number];
+  }
+  const settled = getCurrentPoints(state);
+  if (candidate.action.type === "ron") {
+    const payerIndex = state.phase === "chankan"
+      ? state.lastKan?.playerIndex
+      : state.lastDiscard?.playerIndex;
+    const loss = points.ron ?? points.total;
+    settled[0] += points.total;
+    if (payerIndex !== undefined && payerIndex >= 1 && payerIndex <= 3) {
+      settled[payerIndex] -= loss;
+    }
+    return settled;
+  }
+  if (candidate.action.type === "tsumo" && points.tsumo) {
+    settled[0] += points.total;
+    for (let playerIndex = 1; playerIndex <= 3; playerIndex += 1) {
+      const opponent = state.opponents[playerIndex - 1];
+      const payment = opponent?.seatWind === "1z"
+        ? points.tsumo.dealer
+        : points.tsumo.nonDealer;
+      settled[playerIndex] -= payment;
+    }
+    return settled;
+  }
+  return undefined;
 }
 
 export interface DiscardDecisionEvaluation {
@@ -565,8 +604,12 @@ function renderPassDecisionExplanation(candidate: EvaluatedAction): string {
   const reasons = candidate.reasons
     .slice(0, 4)
     .map((reason) => `- ${reason.message}`);
+  const rejectedAgari = candidate.reasons.some((reason) => (
+    reason.type === "placement"
+    && String(reason.message).includes("继续追逆转")
+  ));
   return [
-    "推荐：不鸣。",
+    rejectedAgari ? "推荐：不和（见逃）。" : "推荐：不鸣。",
     "理由：",
     ...reasons,
   ].join("\n");
@@ -576,8 +619,13 @@ function evaluatePassAction(
   state: GameState,
   phase: DecisionPhase,
   callCandidates: readonly EvaluatedAction[],
+  agariCandidates: readonly EvaluatedAction[] = [],
 ): EvaluatedAction {
   const passEvaluation = evaluatePassBaseline(state);
+  const rejectedAgariReasons = getRejectedAgariReasons(agariCandidates);
+  const reasons = rejectedAgariReasons.length > 0
+    ? rejectedAgariReasons
+    : passEvaluation.reasons;
   return {
     action: { type: "pass" },
     phase,
@@ -589,9 +637,19 @@ function evaluatePassAction(
       speed: passEvaluation.speed,
       value: passEvaluation.value,
     },
-    reasons: passEvaluation.reasons,
+    reasons,
     warnings: [],
   };
+}
+
+function getRejectedAgariReasons(candidates: readonly EvaluatedAction[]): EvaluatedAction["reasons"] {
+  return candidates
+    .filter((candidate) => (
+      candidate.category === "agari"
+      && candidate.priority < 0
+      && candidate.warnings.some((warning) => warning.type === "placement")
+    ))
+    .flatMap((candidate) => candidate.warnings.filter((warning) => warning.type === "placement"));
 }
 
 function getPassScore(state: GameState, callCandidates: readonly EvaluatedAction[], baselineScore: number): number {

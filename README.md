@@ -2,7 +2,7 @@
 
 Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将分析引擎，并在后续通过 CLI、HTTP API、MCP 和工具 schema 暴露给现代 Agent 使用。
 
-当前实现聚焦在牌理基础能力：牌解析、34 维计数转换、向听数、进张和切牌候选分析。它目前还不是完整的麻将对局 Agent。
+当前实现已覆盖牌理、计分、何切评分、EV 快速估算和基于 `GameState` 的统一动作推荐入口。它还不是完整的麻将对局 Agent：截图识别、HTTP API、MCP 和通用工具 schema 尚未实现。
 
 ## 当前能力
 
@@ -32,7 +32,10 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - value evaluator 支持听牌实算打点、一向听二层打点估算，以及宝牌/赤宝牌/宝牌周边价值。
 - 速度与打点通过 `ukeire`、`goodShape` 和 `value` 分项共同进入总分，高打点低进张候选可以抵消一部分速度劣势，但不会直接覆盖牌效。
 - 早巡低价值窄听可以退向一向听做高质量改良：无主动威胁时，若当前听牌待牌少且无宝牌价值，候选能保留宝牌进张和好型改良，会按改良路线折算向听、进张和好型分。
-- 初始 `GameState` 决策入口，支持自摸后切牌推荐，并按 `attack`、`balance`、`defense`、`push` 模式调整策略权重；面对立直时，高打点一向听会进入 `push`。
+- `GameState` 决策入口已接入统一动作仲裁器，支持自家摸牌后的自摸、立直、暗杠、加杠和切牌，也支持他家打牌后的荣和、吃、碰、大明杠和不鸣；完整 JSON 模式还可以表达抢杠响应和岭上摸牌阶段。
+- 动作仲裁链路会先生成合法动作集合，再分别评估和牌、切牌、立直、副露、杠和不鸣候选；有效和牌会优先短路，避免继续运行昂贵的何切、EV 或副露分析。
+- 普通切牌、立直切牌、副露后切牌和杠动作已接入快速 EV 估算；默认在原策略排序后做二次仲裁，可用 `--no-ev-decision` 关闭。
+- 状态推进基础工具支持切牌、立直切牌、不鸣、吃/碰后的切牌、杠动作登记和和牌终局标记，并覆盖基础振听、临时振听、立直见逃振听、食替限制和立直后暗杠待牌不变约束。
 - 点棒/局况策略层，支持南场领先偏守、终局附近领先强防守、南场落后偏推进、自家亲家推进收益、亲家威胁防守加权、供托/本场带来的小幅推进收益，以及南四微差避四的抢和、保听、弃和和四位追分目标。
 - `decide` CLI 支持轻量参数构造局面，或通过 `--state` 读取完整 `GameState` JSON 文件。
 - 防守 MVP 支持对立直/高副露威胁者评估现物、分级筋、无筋中张分级、壁、字牌见张、宝牌、宝牌周边风险、一发风险、亲家风险、防守余力和后续防守不足惩罚。
@@ -51,10 +54,10 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 
 ## 尚未实现
 
-- 完整 `GameState` 合法动作集合，目前只支持自摸后切牌决策。
-- 完整局面策略评分，目前已有防守 MVP、高打点推进、点棒/局况阈值和南四微差避四目标，尚未实现完整副露、立直选择、手出/摸切读取和精确逆转 EV。
-- 截图识别。
+- 完整对局循环和外部牌山推进；当前已有动作应用器和阶段推进工具，但还不是自动跑完整一局的引擎。
+- 更完整的局面策略评分；当前已有防守 MVP、高打点推进、点棒/局况阈值、南四微差避四、基础副露/立直/杠仲裁和快速 EV，尚未实现手出/摸切读取、精确逆转 EV、包牌、四杠散了和多人同时荣和等复杂规则。
 - 自然语言何切题解析。
+- 截图识别。
 - HTTP API。
 - MCP server。
 - OpenAI/Anthropic 工具适配。
@@ -210,7 +213,7 @@ npm run decide -- "345m35p13789s1234z" --turn 9 --left-riichi --left-discards 4z
 npm run decide -- --state examples/decide-state.example.json
 ```
 
-`decide` 当前只支持自摸后切牌决策。轻量参数和完整 JSON 字段说明见 [docs/decide-cli.md](./docs/decide-cli.md)。
+`decide` 已接入统一动作入口。轻量参数可表达常见自摸后行动和他家打牌后的响应；抢杠、岭上摸牌和副露后切牌阶段请使用完整 JSON 局面模式。轻量参数和完整 JSON 字段说明见 [docs/decide-cli.md](./docs/decide-cli.md)。
 
 当前防守评分覆盖：
 
@@ -322,23 +325,43 @@ src/
     paili.ts
     paili-cli.ts
   strategy/
+    action-arbitration.ts
+    action-types.ts
+    agari-evaluation.ts
     evaluators/
       evaluate-defense.ts
       evaluate-route.ts
       evaluate-shape.ts
       evaluate-value.ts
       evaluation.ts
+    apply-action.ts
     arbitration.ts
+    call-constraints.ts
+    call-evaluation.ts
     choose-action.ts
+    ev-decision.ts
     evaluate-nanikiru.ts
     features.ts
     high-value.ts
     improvement.ts
+    kan-evaluation.ts
+    legal-actions.ts
     placement.ts
+    riichi.ts
     nanikiru-context.ts
     nanikiru-policy.ts
     reason.ts
     routes.ts
+  ev/
+    deal-in-rate.ts
+    estimate-round.ts
+    hand-value.ts
+    index.ts
+    opponent-model.ts
+    round-income.ts
+    types.ts
+    wall-model.ts
+    win-rate.ts
   explanation/
     render-nanikiru.ts
   scoring/
@@ -353,6 +376,8 @@ src/
     analyze.ts
     analyze-cli.ts
     decide-cli.ts
+    estimate.ts
+    estimate-cli.ts
     nanikiru.ts
     nanikiru-cli.ts
     parse-hand.ts

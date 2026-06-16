@@ -99,6 +99,24 @@ test("chooseAction can pass a final-hand ron that does not improve placement", (
   )));
 });
 
+test("chooseAction accepts final-hand direct ron when payer loss improves placement", () => {
+  const state = makeState(
+    ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "3z", "3z"],
+    {
+      lastDiscard: "4s",
+      lastDiscardPlayerIndex: 1,
+      bakaze: "2z",
+      kyoku: 4,
+      selfSeatWind: "1z",
+      selfPoints: 10000,
+      opponentPoints: [11500, 30000, 35000],
+    },
+  );
+  const decision = chooseAction(state, { useEvDecision: false });
+
+  assert.deepEqual(decision.action, { type: "ron" });
+});
+
 test("chooseAction does not recommend ron when basic furiten applies", () => {
   const state = makeState(
     ["1m", "2m", "3m", "4m", "5m", "6m", "7p", "8p", "9p", "2s", "3s", "2z", "2z"],
