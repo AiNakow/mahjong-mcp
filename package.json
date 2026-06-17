@@ -12,12 +12,20 @@
     "test:fast": "node --test tests/agari-evaluation.test.ts tests/analyze.test.ts tests/apply-action.test.ts tests/evaluate-action.test.ts tests/evaluate-shape.test.ts tests/ev-deal-in-rate.test.ts tests/ev-decision.test.ts tests/ev-round-income.test.ts tests/ev-win-rate.test.ts tests/legal-actions.test.ts tests/paili.test.ts tests/score-hand.test.ts tests/scoring-golden.test.ts tests/scoring.test.ts",
     "test:slow": "node --test tests/choose-action.test.ts tests/call-evaluation.test.ts tests/evaluate-nanikiru.test.ts tests/evaluate-value.test.ts tests/nanikiru.test.ts tests/riichi.test.ts tests/strategy-refactor.test.ts",
     "test:actions": "node --test tests/legal-actions.test.ts tests/agari-evaluation.test.ts tests/apply-action.test.ts tests/evaluate-action.test.ts",
+    "test:adapters": "node --test tests/adapter-*.test.ts",
     "nanikiru": "node src/service/nanikiru-cli.ts",
     "paili": "node src/hand/paili-cli.ts",
-    "score": "node src/service/score-hand-cli.ts"
+    "score": "node src/service/score-hand-cli.ts",
+    "tool": "node src/service/facade-cli.ts",
+    "http": "node src/adapters/http/server.ts",
+    "mcp": "node src/adapters/mcp/server.ts"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
     "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ajv": "^8.20.0"
   }
 }

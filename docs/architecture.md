@@ -365,6 +365,7 @@ GameState
 - [architecture.md](./architecture.md)：项目分层和模块设计。
 - [strategy.md](./strategy.md)：策略仲裁和工作流程。
 - [scoring.md](./scoring.md)：计分专题。
+- [agent-adapter-m7-plan.md](./agent-adapter-m7-plan.md)：M7 Agent 兼容适配层实施方案。
 - [progress.md](./progress.md)：开发进度流水。
 
 历史阶段性设计稿保存在 [archive/](./archive/)。

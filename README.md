@@ -70,6 +70,7 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - 项目分层和模块设计见 [docs/architecture.md](./docs/architecture.md)。
 - 策略仲裁、工作流程和策略细节见 [docs/strategy.md](./docs/strategy.md)。
 - 和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
+- M7 Agent 兼容适配层实施方案见 [docs/agent-adapter-m7-plan.md](./docs/agent-adapter-m7-plan.md)。
 - 开发进度记录见 [docs/progress.md](./docs/progress.md)。
 
 历史阶段性设计稿保存在 [docs/archive/](./docs/archive/)。
@@ -393,6 +394,7 @@ tests/
   paili.test.ts
   strategy-refactor.test.ts
 docs/
+  agent-adapter-m7-plan.md
   architecture.md
   cli.md
   progress.md

@@ -8,6 +8,9 @@
 - `npm run score`
 - `npm run estimate`
 - `npm run decide`
+- `npm run tool`
+- `npm run http`
+- `npm run mcp`
 
 所有命令默认输出 JSON。异常输入会向 stderr 输出错误信息，并设置非零退出码。牌编码统一使用：
 
@@ -307,8 +310,89 @@ npm test
 npm run test:fast
 npm run test:slow
 npm run test:actions
+npm run test:adapters
 ```
 
 - `test:actions`：动作仲裁专项测试。
 - `test:fast`：日常轻量回归。
 - `test:slow`：副露、立直计划、二层估值和完整 `chooseAction` 慢测。
+- `test:adapters`：Agent 适配层 facade、schema、HTTP、MCP 和 tools schema 测试。
+
+## tool
+
+统一 Agent facade CLI，面向自动化调用。它和 HTTP、MCP、OpenAI/Anthropic tools 使用同一套 service facade 和 `ServiceResult` 输出格式。
+
+```bash
+npm run tool -- nanikiru --json "{\"text\":\"3456m3455p123788s\"}"
+npm run tool -- choose-action --input examples/agent/choose-action-request.json
+npm run tool -- score-hand --input examples/agent/score-hand-request.json
+```
+
+命令：
+
+- `analyze-hand`
+- `nanikiru`
+- `score-hand`
+- `choose-action`
+- `estimate`
+- `parse-screenshot`
+
+输入：
+
+- `--input <request.json>`：读取 JSON 请求文件。
+- `--json '<request>'`：直接传入 JSON 字符串。
+
+输出：
+
+- 成功：`{ "ok": true, "data": ..., "warnings": [], "meta": ... }`
+- 失败：`{ "ok": false, "error": ..., "warnings": [], "meta": ... }`
+
+`parse-screenshot` 当前会稳定返回 `not_implemented`。
+
+## http
+
+启动本地 HTTP API。首版使用 Node 内置 `http` 模块，不引入 Web 框架。
+
+```bash
+npm run http
+npm run http -- --port 3334
+npm run http -- --host 0.0.0.0 --port 3333
+```
+
+默认监听：
+
+```text
+http://127.0.0.1:3333
+```
+
+路由：
+
+- `GET /health`
+- `GET /openapi.json`
+- `POST /v1/mahjong/analyze-hand`
+- `POST /v1/mahjong/nanikiru`
+- `POST /v1/mahjong/score-hand`
+- `POST /v1/mahjong/choose-action`
+- `POST /v1/mahjong/estimate`
+- `POST /v1/mahjong/parse-screenshot`
+
+所有 POST 请求和响应均为 JSON，响应体使用统一 `ServiceResult`。
+
+## mcp
+
+启动 MCP stdio server，供支持 MCP 的 Agent 宿主调用。
+
+```bash
+npm run mcp
+```
+
+当前 tools：
+
+- `mahjong_analyze_hand`
+- `mahjong_nanikiru`
+- `mahjong_score_hand`
+- `mahjong_choose_action`
+- `mahjong_estimate`
+- `mahjong_parse_screenshot`
+
+MCP tool 的 `inputSchema` 与 HTTP/OpenAI/Anthropic tools 共用 `src/schemas/registry.ts`。
