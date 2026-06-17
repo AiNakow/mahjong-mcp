@@ -1,5 +1,18 @@
 # 从零实现立直麻将 Agent 能力计划
 
+> 状态：历史总体路线图和长期方向。
+>
+> 本文记录项目从零实现时的总体目标、分层设想和长期里程碑。当前代码已经按实际演进完成了部分内容，也调整了部分模块边界，因此本文不再作为当前实现细节的权威说明。
+>
+> 当前实现状态以以下文档为准：
+>
+> - [docs/architecture.md](./docs/architecture.md)：项目分层、模块职责和当前能力边界。
+> - [docs/cli.md](./docs/cli.md)：命令行服务完整使用说明。
+> - [docs/strategy.md](./docs/strategy.md)：策略仲裁和工作流程。
+> - [docs/scoring.md](./docs/scoring.md)：和牌分解与计分专题。
+>
+> 本文仍可用于参考长期方向，例如截图识别、HTTP API、MCP server、OpenAI/Anthropic tools schema 和更完整的 Agent 接入层。
+
 目标：不对大模型做额外训练，不依赖第三方麻将计算库，从零实现立直麻将规则、牌理、策略、截图理解和 Agent 兼容接口，使任意现代 Agent 在看到标准立直麻将场面截图后，能够判断推荐动作、回答何切题，并给出可解释理由。
 
 ## 1. 总体架构

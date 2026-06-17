@@ -175,3 +175,12 @@
 - 为一向听二层打点估算增加模块级缓存，复用切后摸牌分析和相同计分上下文下的最高和牌点数，降低重复 `analyzeTiles` 和 `calculateAgariScore` 成本。
 - 调整 `tests/choose-action.test.ts`：非 EV 目标的动作仲裁/局况测试通过 `chooseFast` 关闭 EV 并降低二层估值预算；保留需要 EV 影响排序的立直/改良用例单独启用低预算 EV。
 - 验证 `npm run check`、`npm run test:actions`、`npm run test:fast`、`npm run test:slow` 和完整 `npm test` 均通过；完整测试当前 173 个通过，本轮运行耗时约 2-3 分钟。
+
+## 2026-06-17
+
+- 整合 `docs/` 文档结构，新增当前权威文档 `docs/cli.md`、`docs/architecture.md` 和 `docs/strategy.md`。
+- `docs/cli.md` 按当前源码整理所有 CLI：`paili`、`analyze`、`nanikiru`、`score`、`estimate` 和 `decide`，覆盖参数、模式、示例和输出边界。
+- `docs/architecture.md` 统一说明当前项目分层、核心数据模型、模块职责、主要数据流和能力边界。
+- `docs/strategy.md` 整合何切评分、路线模型、防守、局况、南四避四、立直、副露、杠、pass、EV 二次仲裁和统一动作仲裁流程。
+- 将阶段性设计稿移动到 `docs/archive/`，保留 `docs/scoring.md` 作为计分专题文档，保留本文件作为开发进度流水。
+- 更新 README 的文档入口和 docs 目录结构，避免继续指向旧的阶段性设计稿路径。

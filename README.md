@@ -62,17 +62,17 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - MCP server。
 - OpenAI/Anthropic 工具适配。
 
-完整路线见 [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)。
+历史总体路线图和长期方向见 [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)。
 
-何切评分和解释生成方案见 [docs/strategy-and-explanation.md](./docs/strategy-and-explanation.md)。
+当前权威文档：
 
-策略层可维护性重构状态见 [docs/strategy-refactor-plan.md](./docs/strategy-refactor-plan.md)。
+- 命令行服务完整手册见 [docs/cli.md](./docs/cli.md)。
+- 项目分层和模块设计见 [docs/architecture.md](./docs/architecture.md)。
+- 策略仲裁、工作流程和策略细节见 [docs/strategy.md](./docs/strategy.md)。
+- 和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
+- 开发进度记录见 [docs/progress.md](./docs/progress.md)。
 
-和牌分解与计分能力边界见 [docs/scoring.md](./docs/scoring.md)。
-
-`GameState` 决策 CLI 见 [docs/decide-cli.md](./docs/decide-cli.md)。
-
-南四微差避四与流局听牌策略实现方案见 [docs/南四避四与流局听牌策略方案.md](./docs/南四避四与流局听牌策略方案.md)。
+历史阶段性设计稿保存在 [docs/archive/](./docs/archive/)。
 
 ## 环境要求
 
@@ -213,7 +213,7 @@ npm run decide -- "345m35p13789s1234z" --turn 9 --left-riichi --left-discards 4z
 npm run decide -- --state examples/decide-state.example.json
 ```
 
-`decide` 已接入统一动作入口。轻量参数可表达常见自摸后行动和他家打牌后的响应；抢杠、岭上摸牌和副露后切牌阶段请使用完整 JSON 局面模式。轻量参数和完整 JSON 字段说明见 [docs/decide-cli.md](./docs/decide-cli.md)。
+`decide` 已接入统一动作入口。轻量参数可表达常见自摸后行动和他家打牌后的响应；抢杠、岭上摸牌和副露后切牌阶段请使用完整 JSON 局面模式。轻量参数和完整 JSON 字段说明见 [docs/cli.md](./docs/cli.md)。
 
 当前防守评分覆盖：
 
@@ -393,12 +393,12 @@ tests/
   paili.test.ts
   strategy-refactor.test.ts
 docs/
-  decide-cli.md
+  architecture.md
+  cli.md
   progress.md
   scoring.md
-  strategy-and-explanation.md
-  strategy-refactor-plan.md
-  南四避四与流局听牌策略方案.md
+  strategy.md
+  archive/
 examples/
   decide-state.example.json
 IMPLEMENTATION_PLAN.md
