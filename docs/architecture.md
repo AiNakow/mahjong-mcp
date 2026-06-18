@@ -1,12 +1,13 @@
 # 项目架构与模块设计
 
-Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是确定性牌理、计分、策略评分、EV 快速估算和统一动作仲裁；截图识别、HTTP API、MCP 和通用工具 schema 尚未实现。
+Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是确定性牌理、计分、策略评分、EV 快速估算、统一动作仲裁和 Agent 适配层；截图识别和完整自动对局循环尚未实现。
 
 ## 总体分层
 
 ```text
 文本/JSON 输入
   -> service CLI/API facade
+  -> adapters HTTP/MCP/tools
   -> core 数据模型与规则
   -> hand 牌理
   -> scoring 和牌计分
@@ -19,9 +20,10 @@ Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是
 核心原则：
 
 - `core`、`hand`、`scoring`、`strategy`、`ev` 是可复用库，不依赖 CLI。
-- CLI 只负责参数解析、构造请求、调用服务层和输出 JSON。
+- CLI、HTTP、MCP 和 OpenAI/Anthropic tools 只负责参数解析、请求校验、调用服务层和输出统一 `ServiceResult`。
 - 策略解释来自评分模块产出的 reasons，不由解释器反向猜测。
 - 合法动作生成只判断规则合法性，策略评分只消费合法动作。
+- 公开 JSON Schema 集中在 `src/schemas/registry.ts`，避免 HTTP、MCP 和 tools schema 漂移。
 
 ## 目录职责
 
@@ -166,6 +168,7 @@ Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是
 
 - CLI 参数解析。
 - 文本手牌解析。
+- 统一 Agent facade。
 - 服务级输入输出收敛。
 - 调用底层库函数。
 
@@ -175,10 +178,51 @@ Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是
 - `nanikiru.ts` / `nanikiru-cli.ts`
 - `score-hand.ts` / `score-hand-cli.ts`
 - `estimate.ts` / `estimate-cli.ts`
+- `facade.ts` / `facade-cli.ts`
 - `decide-cli.ts`
 - `cli-common.ts`
 
-当前服务层仍以 CLI 为主。HTTP API、MCP 和工具 schema 是后续接口层工作。
+`facade.ts` 是 CLI、HTTP、MCP 和 OpenAI/Anthropic tools 的公共应用服务边界。它负责请求 schema 校验、稳定错误映射、输出裁剪和 `ServiceResult` 包装。
+
+### schemas
+
+路径：`src/schemas/`
+
+职责：
+
+- 维护公开 JSON Schema。
+- 为 facade、HTTP、OpenAPI、MCP 和 tools schema 提供同一批请求/响应结构。
+- 通过 Ajv 做运行时请求校验。
+
+关键文件：
+
+- `registry.ts`：牌编码、`GameState`、请求、候选、响应和 `ServiceResult` schema。
+
+说明：
+
+- HTTP/facade 请求 schema 保留高级 `policy` 覆盖能力。
+- 面向模型的 tool request schema 会隐藏高级 `policy` 覆盖参数，减少连接器参数歧义。
+
+### adapters
+
+路径：`src/adapters/`
+
+职责：
+
+- 将统一 service facade 暴露给外部 Agent 宿主。
+- 保持 HTTP、MCP、OpenAI tools 和 Anthropic tools 的 schema 与返回格式一致。
+
+主要模块：
+
+- `http/server.ts`：本地 HTTP API server。
+- `http/routes.ts`：路由分发、JSON body 读取、HTTP 状态码映射。
+- `http/openapi.ts`：OpenAPI 3.1 文档生成。
+- `mcp/server.ts`：MCP stdio server。
+- `mcp/http-server.ts`：MCP Streamable HTTP `/mcp` endpoint。
+- `mcp/tools.ts`：MCP tool 注册和调用映射。
+- `tools/openai.ts`：OpenAI function tools 定义和执行入口。
+- `tools/anthropic.ts`：Anthropic tools 定义和执行入口。
+- `tools/execute.ts`：tool name 到 service facade 的统一分发。
 
 ### explanation
 
@@ -209,6 +253,7 @@ Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是
 - 动作应用。
 - 和牌/立直/副露/杠/不鸣仲裁。
 - 策略重构边界。
+- service facade、schema registry、HTTP API、OpenAPI、MCP stdio、MCP Streamable HTTP 和 OpenAI/Anthropic tools schema。
 
 测试脚本：
 
@@ -216,6 +261,7 @@ Mahjong AI 是一个 TypeScript 立直麻将分析引擎。当前实现重点是
 - `npm run test:fast`
 - `npm run test:slow`
 - `npm run test:actions`
+- `npm run test:adapters`
 
 ## 核心数据模型
 
@@ -331,6 +377,17 @@ GameState
   -> ActionDecision
 ```
 
+### Agent 适配
+
+```text
+HTTP/MCP/OpenAI/Anthropic input
+  -> shared JSON Schema validation
+  -> service facade
+  -> domain service / strategy / ev
+  -> ServiceResult
+  -> adapter-specific transport response
+```
+
 ## 当前能力边界
 
 已实现：
@@ -346,6 +403,11 @@ GameState
 - 基础振听、临时振听、立直见逃振听、食替限制和立直后暗杠待牌不变约束。
 - 快速 EV 估算和 EV 二次仲裁。
 - CLI 服务。
+- 统一 Agent facade。
+- HTTP API 和 OpenAPI。
+- MCP stdio server。
+- MCP Streamable HTTP server。
+- OpenAI/Anthropic tools schema。
 
 尚未实现：
 
@@ -353,9 +415,7 @@ GameState
 - 更复杂的特殊规则，例如包牌、四杠散了、多人同时荣和结算。
 - 自然语言何切题解析。
 - 截图识别。
-- HTTP API。
-- MCP server。
-- OpenAI/Anthropic 工具 schema。
+- 更完整的 Agent 侧自然语言到结构化 `GameState` 构造。
 
 ## 文档组织
 

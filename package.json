@@ -18,7 +18,8 @@
     "score": "node src/service/score-hand-cli.ts",
     "tool": "node src/service/facade-cli.ts",
     "http": "node src/adapters/http/server.ts",
-    "mcp": "node src/adapters/mcp/server.ts"
+    "mcp": "node src/adapters/mcp/server.ts",
+    "mcp:http": "node src/adapters/mcp/http-server.ts"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",

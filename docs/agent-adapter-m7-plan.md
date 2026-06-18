@@ -888,18 +888,21 @@ interface ChooseActionRequest {
 - `src/service/facade-cli.ts`：统一 `npm run tool` CLI。
 - `src/adapters/http/`：Node 内置 `http` 版 HTTP API、路由和 OpenAPI 文档生成。
 - `src/adapters/mcp/`：基于官方 MCP SDK 的 stdio server 和 JSON Schema tool 注册。
+- `src/adapters/mcp/http-server.ts`：基于官方 MCP SDK Streamable HTTP transport 的 `/mcp` endpoint，可用于 ChatGPT Apps / Connectors。
 - `npm run test:adapters`：适配层专项测试。
 - `examples/agent/*.json`：统一 facade CLI 和 Agent 适配层示例请求。
 - HTTP server e2e 测试：测试中启动本地 server，验证 `/health`、`/openapi.json` 和 POST 路由。
 - MCP handler 测试：直接验证 tool 调用返回 MCP content 和 JSON `ServiceResult`。
+- MCP stdio e2e 测试：使用官方 SDK client 启动本地 stdio server，验证 tools/list 和 tools/call。
+- MCP Streamable HTTP e2e 测试：启动本地 `/mcp` server，使用官方 SDK HTTP client 验证 tools/list 和 tools/call。
 - `CandidateAction` schema：已按动作类型拆分联合分支，避免只校验 `type`。
 - OpenAPI 响应：已补通用 `ServiceResult` / `ServiceFailure` 响应 schema。
+- 输出侧核心 schema：已补 `DecisionAction`、`Reason`、`NanikiruCandidate`、`NanikiruResponseData`、`ChooseActionResponseData` 和 `ScoreHandResponseData`。
 
 仍待增强：
 
-- 增加 MCP stdio 子进程级 e2e 测试；当前已测试 tool registry 和 handler，server wiring 由类型检查覆盖。
-- 进一步收紧 `NanikiruPolicy`、`Reason`、`DecisionAction` 等输出侧 schema。
-- 为 OpenAPI 增加更完整的业务响应 data schema，而不只是通用 `ServiceResult` 外壳。
+- 进一步收紧 `NanikiruPolicy`、`RoundEstimate`、`EvaluatedAction` 等复杂对象 schema。
+- 为 OpenAPI 增加 endpoint 专属响应 schema，将通用 `ServiceResult` 与具体 `data` schema 组合起来。
 
 ## 推荐首个 PR 切分
 

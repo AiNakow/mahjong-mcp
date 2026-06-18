@@ -11,6 +11,7 @@
 - `npm run tool`
 - `npm run http`
 - `npm run mcp`
+- `npm run mcp:http`
 
 所有命令默认输出 JSON。异常输入会向 stderr 输出错误信息，并设置非零退出码。牌编码统一使用：
 
@@ -395,4 +396,35 @@ npm run mcp
 - `mahjong_estimate`
 - `mahjong_parse_screenshot`
 
-MCP tool 的 `inputSchema` 与 HTTP/OpenAI/Anthropic tools 共用 `src/schemas/registry.ts`。
+MCP tool 的 `inputSchema` 与 HTTP/OpenAI/Anthropic tools 共用 `src/schemas/registry.ts`。面向模型/连接器的 `mahjong_nanikiru` 和 `mahjong_choose_action` 使用简化 tool request schema，不暴露高级 `policy` 覆盖字段；HTTP 和 facade 入口仍保留完整请求 schema。
+
+## mcp:http
+
+启动远程 MCP Streamable HTTP server，供 ChatGPT Apps / Connectors 这类需要公网 HTTP MCP endpoint 的宿主调用。
+
+```bash
+npm run mcp:http
+npm run mcp:http -- --port 3334
+npm run mcp:http -- --host 0.0.0.0 --port 3334
+```
+
+默认监听：
+
+```text
+http://127.0.0.1:3334/mcp
+```
+
+本地接 ChatGPT 网页开发时通常需要公网 HTTPS 隧道：
+
+```bash
+npm run mcp:http -- --port 3334
+ngrok http 3334
+```
+
+然后在 ChatGPT 的 Apps & Connectors 开发者模式中填写：
+
+```text
+https://<your-ngrok-domain>/mcp
+```
+
+`GET /health` 可用于探活。

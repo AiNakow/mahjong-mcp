@@ -184,3 +184,14 @@
 - `docs/strategy.md` 整合何切评分、路线模型、防守、局况、南四避四、立直、副露、杠、pass、EV 二次仲裁和统一动作仲裁流程。
 - 将阶段性设计稿移动到 `docs/archive/`，保留 `docs/scoring.md` 作为计分专题文档，保留本文件作为开发进度流水。
 - 更新 README 的文档入口和 docs 目录结构，避免继续指向旧的阶段性设计稿路径。
+
+## 2026-06-19
+
+- 落地 M7 Agent 适配层：新增统一 service facade、共享 JSON Schema registry、HTTP API、OpenAPI 文档、MCP stdio server、MCP Streamable HTTP server，以及 OpenAI/Anthropic tools schema。
+- 新增 `npm run tool`、`npm run http`、`npm run mcp` 和 `npm run mcp:http` 脚本；`tool` CLI、HTTP、MCP 和 tools 均复用同一套 facade 与 `ServiceResult` 输出格式。
+- HTTP API 当前提供 `/health`、`/openapi.json` 和 `/v1/mahjong/analyze-hand`、`nanikiru`、`score-hand`、`choose-action`、`estimate`、`parse-screenshot` 路由；`parse-screenshot` 仍稳定返回 `not_implemented`。
+- MCP stdio 和 Streamable HTTP 均暴露 `mahjong_analyze_hand`、`mahjong_nanikiru`、`mahjong_score_hand`、`mahjong_choose_action`、`mahjong_estimate` 和 `mahjong_parse_screenshot` tools。
+- MCP tools 返回文本摘要、完整 JSON 文本和 `structuredContent`；tool 元数据包含 `title`、`outputSchema` 和只读/幂等 annotations。
+- 为模型工具调用拆出 `nanikiruToolRequest` 和 `chooseActionToolRequest`，隐藏高级 `policy` 覆盖字段；HTTP/facade 的完整请求 schema 仍保留 `policy`，供程序化调用和调试使用。
+- 新增 adapter 测试覆盖 facade、schema、HTTP、OpenAPI、MCP handler、MCP stdio e2e、MCP Streamable HTTP e2e 和 OpenAI/Anthropic tools schema；`npm run test:adapters` 当前通过。
+- 同步 README 和 `docs/architecture.md`，把 HTTP、MCP 和 tools schema 从“尚未实现”移到当前能力范围，并补充 MCP HTTP connector 使用边界。

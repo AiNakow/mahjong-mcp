@@ -1,8 +1,8 @@
 # Mahjong AI
 
-Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将分析引擎，并在后续通过 CLI、HTTP API、MCP 和工具 schema 暴露给现代 Agent 使用。
+Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将分析引擎，并通过 CLI、HTTP API、MCP 和工具 schema 暴露给现代 Agent 使用。
 
-当前实现已覆盖牌理、计分、何切评分、EV 快速估算和基于 `GameState` 的统一动作推荐入口。它还不是完整的麻将对局 Agent：截图识别、HTTP API、MCP 和通用工具 schema 尚未实现。
+当前实现已覆盖牌理、计分、何切评分、EV 快速估算、基于 `GameState` 的统一动作推荐入口、统一 Agent facade、HTTP API、MCP server 和 OpenAI/Anthropic tools schema。它还不是完整的麻将对局 Agent：截图识别和完整自动对局循环尚未实现。
 
 ## 当前能力
 
@@ -49,6 +49,11 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - 计分服务层和 CLI，支持结构化传入和牌牌、荣和/自摸、自风、场风、立直、本场、立直棒和宝牌指示牌。
 - 计分服务支持结构化副露输入；暗杠不破门清，吃/碰/明杠/加杠会按开门处理，食断由 `kuitan` 控制。
 - 计分结果会用 `status` 区分未和牌、和牌但无役、正常计分；默认输出精简结果，使用 `verbose`/`--verbose` 时返回全部候选、分解和底层 raw。
+- 统一 Agent facade CLI，HTTP API、MCP 和 OpenAI/Anthropic tools 共用同一套 service facade 与 `ServiceResult` 输出格式。
+- HTTP API 已提供 `/health`、`/openapi.json` 和 `/v1/mahjong/*` JSON 路由，覆盖牌理分析、何切、计分、动作推荐、EV 估算和截图解析占位接口。
+- MCP stdio server 已提供 `mahjong_analyze_hand`、`mahjong_nanikiru`、`mahjong_score_hand`、`mahjong_choose_action`、`mahjong_estimate` 和 `mahjong_parse_screenshot` tools。
+- MCP Streamable HTTP server 已提供 `/mcp` endpoint，可通过公网 HTTPS 隧道接入 ChatGPT Apps / Connectors 等宿主；`GET /health` 可用于探活。
+- OpenAI/Anthropic tools schema 已复用共享 JSON Schema；面向模型的工具 schema 会隐藏高级 `policy` 覆盖参数，降低连接器参数歧义，HTTP/facade 仍保留完整策略覆盖能力。
 - 简单的牌理 CLI。
 - 使用 Node 内置测试框架覆盖当前行为。
 
@@ -58,9 +63,7 @@ Mahjong AI 是一个 TypeScript 项目，目标是构建可复用的立直麻将
 - 更完整的局面策略评分；当前已有防守 MVP、高打点推进、点棒/局况阈值、南四微差避四、基础副露/立直/杠仲裁和快速 EV，尚未实现手出/摸切读取、精确逆转 EV、包牌、四杠散了和多人同时荣和等复杂规则。
 - 自然语言何切题解析。
 - 截图识别。
-- HTTP API。
-- MCP server。
-- OpenAI/Anthropic 工具适配。
+- 更完整的 Agent 侧自然语言到结构化 `GameState` 构造；当前 `mahjong_choose_action` 仍建议由程序或前端生成完整局面 JSON。
 
 历史总体路线图和长期方向见 [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md)。
 
@@ -239,6 +242,37 @@ npm run decide -- --state examples/decide-state.example.json
 
 当前推荐解释还包含少量候选间比较启发式：当一向听候选的进张和好型数接近时，若先切中张可以避免听牌后再切相对危险的中张，会在理由中说明；宝牌役牌对子场景会抑制弱断幺路线解释，避免把高价值役牌对子误说成断幺倾向。
 
+运行统一 Agent facade：
+
+```bash
+npm run tool -- nanikiru --json "{\"text\":\"3456m3455p123788s\"}"
+npm run tool -- choose-action --input examples/agent/choose-action-request.json
+```
+
+启动 HTTP API：
+
+```bash
+npm run http
+npm run http -- --port 3334
+```
+
+默认监听 `http://127.0.0.1:3333`，OpenAPI 文档位于 `GET /openapi.json`。
+
+启动 MCP stdio server：
+
+```bash
+npm run mcp
+```
+
+启动 MCP Streamable HTTP server：
+
+```bash
+npm run mcp:http
+npm run mcp:http -- --host 0.0.0.0 --port 3334
+```
+
+默认 endpoint 为 `http://127.0.0.1:3334/mcp`。本地接 ChatGPT 网页开发时通常需要公网 HTTPS 隧道，并在 connector 中填写隧道域名下的 `/mcp` 路径。
+
 ## 代码调用示例
 
 ```ts
@@ -273,6 +307,15 @@ const score = calculateAgariScore({
   bakaze: "1z",
   riichi: true,
 });
+const makeOpponent = (seatWind: "2z" | "3z" | "4z") => ({
+  seatWind,
+  points: 25000,
+  calls: [],
+  discards: [],
+  riichi: false,
+  ippatsu: false,
+  menzen: true,
+});
 const decision = chooseAction({
   round: { bakaze: "1z", kyoku: 1, honba: 0, riichiSticks: 0, turn: 9 },
   self: {
@@ -285,7 +328,7 @@ const decision = chooseAction({
     ippatsu: false,
     menzen: true,
   },
-  opponents: [],
+  opponents: [makeOpponent("2z"), makeOpponent("3z"), makeOpponent("4z")],
   doraIndicators: [],
   visibleTiles: Array(34).fill(0),
   rules: { akaDora: true, kuitan: true, doubleRon: true, countDoubleYakuman: false },
@@ -365,6 +408,21 @@ src/
     win-rate.ts
   explanation/
     render-nanikiru.ts
+  adapters/
+    http/
+      openapi.ts
+      routes.ts
+      server.ts
+    mcp/
+      http-server.ts
+      server.ts
+      tools.ts
+    tools/
+      anthropic.ts
+      execute.ts
+      openai.ts
+  schemas/
+    registry.ts
   scoring/
     calculate.ts
     decompose.ts
@@ -376,6 +434,8 @@ src/
   service/
     analyze.ts
     analyze-cli.ts
+    facade.ts
+    facade-cli.ts
     decide-cli.ts
     estimate.ts
     estimate-cli.ts
@@ -385,6 +445,10 @@ src/
     score-hand.ts
     score-hand-cli.ts
 tests/
+  adapter-facade.test.ts
+  adapter-http.test.ts
+  adapter-mcp.test.ts
+  adapter-schema.test.ts
   analyze.test.ts
   choose-action.test.ts
   evaluate-nanikiru.test.ts
@@ -402,6 +466,10 @@ docs/
   strategy.md
   archive/
 examples/
+  agent/
+    choose-action-request.json
+    nanikiru-request.json
+    score-hand-request.json
   decide-state.example.json
 IMPLEMENTATION_PLAN.md
 paili.py

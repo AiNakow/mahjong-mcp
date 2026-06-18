@@ -10,7 +10,7 @@ export const anthropicTools = [
   {
     name: "mahjong_nanikiru",
     description: "根据手牌文本和可选上下文给出何切推荐、候选评分和中文解释。",
-    input_schema: schemas.nanikiruRequest,
+    input_schema: schemas.nanikiruToolRequest,
   },
   {
     name: "mahjong_score_hand",
@@ -20,7 +20,7 @@ export const anthropicTools = [
   {
     name: "mahjong_choose_action",
     description: "根据完整 GameState 推荐当前合法动作，并返回结构化结果和中文解释。",
-    input_schema: schemas.chooseActionRequest,
+    input_schema: schemas.chooseActionToolRequest,
   },
   {
     name: "mahjong_estimate",
@@ -37,4 +37,3 @@ export const anthropicTools = [
 export function executeAnthropicTool(name: MahjongToolName, input: unknown) {
   return executeTool(name, input, "anthropic_tool");
 }
-
